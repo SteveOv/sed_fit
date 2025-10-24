@@ -1,0 +1,16 @@
+# Testing runtime environment for sed_fit; ensures we remain at the minimum support python level
+name: sed_fit
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python >=3.9,<=3.12
+
+  - pip
+  - pip:
+    - -r requirements.txt
+
+variables:
+

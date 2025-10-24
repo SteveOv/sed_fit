@@ -205,3 +205,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Ignore vscode devtime/runtime files and the local venv
+.vscode
+.sed_fit
+.cache
