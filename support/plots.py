@@ -1,17 +1,24 @@
 """ Training and testing specific plots. """
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches, too-many-statements
-from typing import Union, Tuple, Iterable, Generator, Callable, List
-from itertools import zip_longest
+from typing import Tuple, Callable, List
 
 import numpy as np
+from numpy.typing import ArrayLike
+
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure as _Figure
 from matplotlib.axes import Axes as _Axes
 
 # pylint: disable=no-member
 import astropy.units as u
+from astropy.table import Table
+
 from lightkurve import LightCurve as _LC, FoldedLightCurve as _FLC, LightCurveCollection as _LCC
 
+from uncertainties.unumpy import nominal_values
+
+from sed_fit.stellar_grids import StellarGrid
+from sed_fit.sed_fit import model_func
 
 def plot_sed(x: u.Quantity,
              fluxes: List[u.Quantity],
@@ -77,56 +84,54 @@ def plot_sed(x: u.Quantity,
     return fig
 
 
-def plot_lightcurves(lcs: Union[_LCC, _LC, _FLC],
-                     column: str="flux",
-                     ax_titles: Union[str, Iterable[str]]=None,
-                     normalize_lcs: bool=False,
-                     cols: int=2,
-                     ax_func: Callable[[int, _Axes], None]=None,
-                     **format_kwargs) -> _Figure:
+def plot_fitted_model(sed: Table,
+                      theta: ArrayLike,
+                      model_grid: StellarGrid,
+                      sed_flux_colname: str="sed_der_flux",
+                      sed_flux_err_colname: str="sed_eflux",
+                      sed_filter_colname: str="sed_filter",
+                      sed_lambda_colname: str="sed_wl",
+                      **format_kwargs):
     """
-    Creates a matplotlib figure and plots a grid of lightcurves on it, one per Axes.
+    Wraps and extends plot_sed() so that the observed SED points are plotted plus the equivalent
+    combined model SED data points from the fitted model. Additionally, the model SED points and
+    full spectrum of each component star will be plotted.
 
-    :lcs: the lightcurves to plot, one per matplotlib Axes
-    :column: the lightcurve data column to plot of the y-axis
-    :ax_titles: the titles to give each Axes
-    :normalize_lcs: whether or not to normalize the y-axis data before plotting
-    :cols: the number of columns on the grid of Axes
-    :ax_func: callback taking (ax index, ax) called for each Axes prior to applying format_kwargs
+    The data and axes will be coerced to units of x=wavelength [um] and y=nu*F(nu) [W / m^2].
+    The axes will be set to log-log scale.
+
+    :sed: the x-axis/wavelength datapoints
+    :theta: the fitting parameters as passed to sed_fit model_func
+    :model_grid: the StellarGrid supplying the model fluxes to the fitting
+    :sed_flux_colname:
+    :sed_flux_err_colname:
+    :sed_filter_colname:
+    :sed_lambda_colname:
     :format_kwargs: kwargs to be passed on to format_axes()
     :returns: the final Figure
     """
-    # Ensure the data and titles are iterable, even if there is none
-    if isinstance(lcs, (_LC, _FLC)):
-        lcs = _LCC([lcs])
-    count_lcs = len((list(lcs) if isinstance(lcs, Generator) else lcs))
-    if ax_titles is None:
-        ax_titles = []
-    elif isinstance(ax_titles, str):
-        ax_titles = [ax_titles] * count_lcs
+    # Generate model SED fluxes at points x for each set of component star params in theta
+    x = model_grid.get_filter_indices(sed[sed_filter_colname])
+    th = nominal_values(theta)
+    comp_fluxes = model_func(th, x, model_grid, combine=False) * model_grid.flux_unit
+    sys_flux = np.sum(comp_fluxes, axis=0)
 
-    # Set up the figure and Axes
-    rows = int(np.ceil(count_lcs / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(9, 3*rows), sharey=True, constrained_layout=True)
-    axes = [axes] if isinstance(axes, _Axes) else axes.flatten()
+    # Plot the fitted model against the derredened SED + show each star's contribution
+    fluxes = [sed[sed_flux_colname].quantity, sys_flux, comp_fluxes[0], comp_fluxes[1]]
+    flux_errs = [sed[sed_flux_err_colname].quantity, None, None, None]
+    fig = plot_sed(x=sed[sed_lambda_colname].to(u.um), fluxes=fluxes, flux_errs=flux_errs,
+                   fmts=["ob", ".k", "*g", "xr"],
+                   labels=["dereddened SED", "fitted pair", "fitted star A", "fitted star B"],
+                   **format_kwargs)
 
-    for ix, (ax, lc, title) in enumerate(zip_longest(axes, lcs, ax_titles)):
-        if ix < count_lcs:
-            plot_lightcurve_on_axes(ax, lc, column, normalize_lcs)
-
-            if ix == 0 and lc[column].unit == u.mag:
-                ax.invert_yaxis()
-
-            if ax_func is not None:
-                ax_func(ix, ax)
-
-            # Only want the y-label on the left most column as sharey is in play
-            ax.set_ylabel(None if ix % cols else ax.get_ylabel())
-            format_axes(ax, title=title, **format_kwargs)
-        else:
-            # Hide any unused axes
-            ax.axis("off")
-
+    # Plot the raw spectra for each component as a background
+    spec_lams = model_grid.wavelengths * model_grid.wavelength_unit
+    mask = spec_lams >= sed[sed_lambda_colname].quantity.min()
+    mask &= spec_lams <= sed[sed_lambda_colname].quantity.max()
+    dist = th[-2]
+    for teff, rad, logg, c in [(th[0], th[2], th[4], "g"), (th[1], th[3], th[5], "r")]:
+        spec_flux = model_grid.get_fluxes(teff, logg, 0, rad, dist) * model_grid.flux_unit
+        fig.gca().plot(spec_lams[mask], spec_flux[mask], c=c, alpha=0.15, zorder=-100)
     return fig
 
 
