@@ -1,0 +1,25 @@
+[project]
+name = "sed_fit"
+version = "0.1"
+description = "Single and multiple star SED modelling and fitting library"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy<2.0",
+    "pathlib",
+    "scipy",
+    "astropy>=5.1",
+    "uncertainties>=3.2",
+    "dust_extinction",
+    "emcee"
+]
+
+[build-system]
+# setuptools-scm is needed for this to pick up data folders held in repo
+# along with include-package-data = true
+requires = ["setuptools >= 61.0.0", "setuptools-scm", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["sed_fit"]
+include-package-data = true
