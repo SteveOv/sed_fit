@@ -87,16 +87,9 @@ if __name__ == "__main__":
         target_data["light_ratio"] = ufloat(10**(target_config.get("logLB", 1) - target_config.get("logLA", 1)), 0)
     target_data["teff_ratio"] = (target_data["light_ratio"] / target_data["k"]**2)**0.25
 
-    # Estimate the teffs, based on the published system value and the ratio from fitting
-    if target_data["teff_ratio"].n <= 1:
-        target_data["teffs0"] = [target_data["teff_sys"].n, (target_data["teff_sys"] * target_data["teff_ratio"]).n]
-    else:
-        target_data["teffs0"]  = [(target_data["teff_sys"] / target_data["teff_ratio"]).n, target_data["teff_sys"].n]
-
     print(f"{TARGET} system values from lookup and LC fitting:")
     for p, unit in [("teff_sys", u.K), ("logg_sys", u.dex), ("k", None), ("teff_ratio", None)]:
         print(f"{p:>12s} = {target_data[p]:.3f} {unit or u.dimensionless_unscaled:unicode}")
-    print(f"      teffs0 = [{', '.join(f'{t:.3f}' for t in target_data['teffs0'])}]")
 
     # The G23 (Gordon et al., 2023) Milky Way R(V) filter gives us the broadest coverage
     ext_model = G23(Rv=3.1)
@@ -119,7 +112,8 @@ if __name__ == "__main__":
                 & (sed["sed_wl"] <= 22 * u.um) # Dirty fix to avoid WISE:W4 which causes problems
     sed = sed[model_mask]
 
-    out_mask = create_outliers_mask(sed, target_data["teffs0"], min_unmasked=15, verbose=True)
+    out_mask = create_outliers_mask(sed, target_data["teff_sys"].n, [target_data["teff_ratio"].n],
+                                    min_unmasked=15, verbose=True)
     sed = sed[~out_mask]
 
     sed.sort(["sed_wl"])
@@ -174,7 +168,7 @@ if __name__ == "__main__":
 
     # Set up the initial fit position. The fit mask indicates we're only fitting teffs & radii
     print("\nSetting up data for fitting")
-    theta0 = sed_fit.create_theta(teffs=target_data["teffs0"],
+    theta0 = sed_fit.create_theta(teffs=[target_data["teff_sys"].n] * NUM_STARS,
                                   radii=[1.0] * NUM_STARS,
                                   loggs=[target_data["logg_sys"].n] * NUM_STARS,
                                   dist=target_data["distance_pc"],
