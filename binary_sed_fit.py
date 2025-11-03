@@ -25,7 +25,7 @@ from support.pipeline import get_teff_from_spt
 from support.sed import get_sed_for_target, create_outliers_mask, group_and_average_fluxes
 
 from sed_fit.stellar_grids import BtSettlGrid
-from sed_fit import sed_fit
+from sed_fit import fitter
 
 if __name__ == "__main__":
     TARGET = "CM Dra"
@@ -36,8 +36,8 @@ if __name__ == "__main__":
     targets_cfg = { k: full_dict[k] for k in full_dict if full_dict[k].get("enabled", True) }
     target_config = targets_cfg[TARGET]
 
-    target_config.setdefault("loggA", log_g(target_config["MA"] * M_sun, target_config["RA"] * R_sun).n)
-    target_config.setdefault("loggB", log_g(target_config["MB"] * M_sun, target_config["RB"] * R_sun).n)
+    target_config.setdefault("logg1", log_g(target_config["M1"] * M_sun, target_config["R1"] * R_sun).n)
+    target_config.setdefault("logg2", log_g(target_config["M2"] * M_sun, target_config["R2"] * R_sun).n)
 
     # Additional data on the target populated with lookups
     target_data = {
@@ -83,8 +83,8 @@ if __name__ == "__main__":
         target_data["light_ratio"] = ufloat(target_config.get("light_ratio"),
                                             target_config.get("light_ratio_err", 0) or 0)
     else:
-        # If from LC fit we may also need to consider l3; lA=(1-l3)/(1+(LB/LA)) & lB=(1-l3)/(1+1/(LB/LA))
-        target_data["light_ratio"] = ufloat(10**(target_config.get("logLB", 1) - target_config.get("logLA", 1)), 0)
+        # If from LC fit we may also need to consider 3L; l1=(1-3L)/(1+(L2/L1)) & l2=(1-3L)/(1+1/(L2/L1))
+        target_data["light_ratio"] = ufloat(10**(target_config.get("logL2", 1) - target_config.get("logL1", 1)), 0)
     target_data["teff_ratio"] = (target_data["light_ratio"] / target_data["k"]**2)**0.25
 
     print(f"{TARGET} system values from lookup and LC fitting:")
@@ -132,8 +132,8 @@ if __name__ == "__main__":
 
     NUM_STARS = 2
     fit_mask = np.array([True] * NUM_STARS      # Teff
-                        + [True] * NUM_STARS    # radius
                         + [False] * NUM_STARS   # logg
+                        + [True] * NUM_STARS    # radius
                         + [False]               # dist
                         + [fit_av])             # av
 
@@ -150,7 +150,7 @@ if __name__ == "__main__":
         The fitting prior callback function to evaluate the current set of candidate
         parameters (theta), returning a single ln(value) indicating their "goodness".
         """
-        teffs, radii, loggs, dist, av = theta[0:2], theta[2:4], theta[4:6], theta[6], theta[7]
+        teffs, loggs, radii, dist, av = theta[0:2], theta[2:4], theta[4:6], theta[6], theta[7]
 
         # Limit criteria checks - hard pass/fail on these
         if not all(teff_limits[0] <= t <= teff_limits[1] for t in teffs) or \
@@ -168,9 +168,9 @@ if __name__ == "__main__":
 
     # Set up the initial fit position. The fit mask indicates we're only fitting teffs & radii
     print("\nSetting up data for fitting")
-    theta0 = sed_fit.create_theta(teffs=[target_data["teff_sys"].n] * NUM_STARS,
-                                  radii=[1.0] * NUM_STARS,
+    theta0 = fitter.create_theta(teffs=[target_data["teff_sys"].n] * NUM_STARS,
                                   loggs=[target_data["logg_sys"].n] * NUM_STARS,
+                                  radii=[1.0] * NUM_STARS,
                                   dist=target_data["distance_pc"],
                                   av=0,
                                   nstars=NUM_STARS,
@@ -185,19 +185,19 @@ if __name__ == "__main__":
 
     # Quick initial minimize fit
     print()
-    theta_min, _ = sed_fit.minimize_fit(x, y, y_err, theta0, fit_mask, verbose=True,
+    theta_min, _ = fitter.minimize_fit(x, y, y_err, theta0, fit_mask, verbose=True,
                                         ln_prior_func=ln_prior_func, stellar_grid=model_grid)
 
     # MCMC fit, starting from where the minimize fit finished
     print()
-    theta_mcmc, _ = sed_fit.mcmc_fit(x, y, y_err, theta_min, fit_mask,
+    theta_mcmc, _ = fitter.mcmc_fit(x, y, y_err, theta_min, fit_mask,
                                      ln_prior_func=ln_prior_func, stellar_grid=model_grid,
                                      processes=8, early_stopping=True, progress=True, verbose=True)
 
     # Output a comparison with known values (assuming we've fitted teffs and radii)
     print(f"\nFinal parameters for {TARGET} with nominals & 1-sigma error bars from MCMC fit")
-    theta_labels = [("TeffA", model_grid.teff_unit), ("TeffB", model_grid.teff_unit),
-                    ("RA", u.Rsun), ("RB", u.Rsun)]
+    theta_labels = [("Teff1", model_grid.teff_unit), ("Teff2", model_grid.teff_unit),
+                    ("R1", u.Rsun), ("R2", u.Rsun)]
     for (param, unit), fit in zip(theta_labels, theta_mcmc[fit_mask]):
         known = ufloat(target_config.get(param, np.NaN), target_config.get(param+"_err", None) or 0)
         print(f"{param:>12s} = {fit:.3f} {unit:unicode} (known value {known:.3f} {unit:unicode})")

@@ -1,5 +1,5 @@
 """ A module for fitting stellar model fluxes for multiple stars to stellar SEDs """
-from typing import Tuple, List, Callable, Union
+from typing import Tuple, List, Callable, Union, Generator
 from numbers import Number
 from math import floor as _floor
 
@@ -46,7 +46,7 @@ _fit_mutex = _Lock()
 
 def _ln_likelihood_func(y_model: _np.ndarray[float], degrees_of_freedom: int) -> float:
     """
-    The fitting likelihoof function used to evaluate the model y values against the observations,
+    The fitting likelihood function used to evaluate the model y values against the observations,
     returning a single negative value indicating the goodness of the fit.
     
     Based on a weighted chi^2: chi^2_w = 1/(N_obs-n_param) * Σ W(y-y_model)^2
@@ -68,13 +68,8 @@ def model_func(theta: _np.ndarray[float],
                stellar_grid: StellarGrid=None,
                combine: bool=True):
     """
-    Generate the model fluxes at points x from the candidate parameters theta.
-
-    flux(star_N) = flux_func(x, teff_N, logg_N) * radius_N^2 / dist^2
-
-    Accesses the following global variables which will be set by call to (minimize|mcmc)_fit()
-    - _x: the x points to generate model data for
-    - _stellar_grid: StellarGrid to generate model fluxes, returning floats in same units as SED
+    Generate the model fluxes at points x from the candidate parameters theta. Calls the
+    StellarGrid instance's get_filter_fluxes() func to generate model fluxes for each star.
 
     :theta: the full set of parameters from which to generate model fluxes
     :x: optional filter/wavelengths to generate fluxes for - if omitted will use _x
@@ -89,15 +84,8 @@ def model_func(theta: _np.ndarray[float],
     if stellar_grid is None:
         stellar_grid = _stellar_grid
 
-    # The teff, rad and logg for each star is interleaved, so if two stars we expect:
-    # [teff0, teff1, rad0, rad1, logg0, logg1, dist, av]. With 3 params per star the #stars is...
-    nstars = (theta.shape[0] - 2) // 3
-    tstar = theta[:-2].reshape((3, nstars)).transpose()
-    dist = theta[-2]
-    av = theta[-1]
-    y_model = _np.array([
-        stellar_grid.get_filter_fluxes(x, teff, logg, 0, rad, dist, av) for teff, rad, logg in tstar
-    ])
+    y_model = _np.array([stellar_grid.get_filter_fluxes(x, teff, logg, 0, rad, dist, av)
+                                            for teff, logg, rad, dist, av in iterate_theta(theta)])
 
     if combine:
         return _np.sum(y_model, axis=0)
@@ -323,8 +311,8 @@ def mcmc_fit(x: _np.ndarray[float],
 
 
 def create_theta(teffs: Union[List[float], float],
-                 radii: Union[List[float], float],
                  loggs: Union[List[float], float],
+                 radii: Union[List[float], float],
                  dist: float,
                  av: float=0,
                  nstars: int=2,
@@ -335,17 +323,17 @@ def create_theta(teffs: Union[List[float], float],
 
     The resulting theta array will have the form:
     ```python
-    theta = [teff0, ... , teffN, rad0, ... , radN, logg0, ..., loggN, dist]
+    theta = [teff0, ... , teffN, logg0, ..., loggN, rad0, ... , radN, dist, av]
     ```
     where N is nstars - 1.
 
-    Units: teffs in K, radii in Rsun, logg in dex[cgs] and distance in parsecs
+    Units: teffs in K, logg in dex[cgs], radii in Rsun and distance in parsecs
 
     Note: theta has to be one-dimensional as scipy minimize will not fit multidimensional theta
 
     :teffs: effective temps [K] as a list of floats nstars long or a single float (same value each)
-    :radii: stars' radii [Rsun] as a list of floats nstars long or a single float (same value each)
     :loggs: stars' log(g) as a list of floats nstars long or a single float (same value each)
+    :radii: stars' radii [Rsun] as a list of floats nstars long or a single float (same value each)
     :dist: the distance [parsecs] as a single float
     :av: the Av extinction parameter
     :nstars: the number of stars we're building for
@@ -353,7 +341,7 @@ def create_theta(teffs: Union[List[float], float],
     """
     theta = _np.empty((nstars * 3 + 2), dtype=float)
     ix = 0
-    for name, val in [("teffs", teffs),("radii", radii),("loggs", loggs),("dist", dist),("av", av)]:
+    for name, val in [("teffs", teffs),("loggs", loggs),("radii", radii),("dist", dist),("av", av)]:
         exp_count = 1 if name in ("dist", "av") else nstars
 
         # Attempt to interpret the value as a List[Number]
@@ -371,3 +359,18 @@ def create_theta(teffs: Union[List[float], float],
     if verbose:
         print("theta:\t", ", ".join(f"{t:.3e}" if isinstance(t, Number) else f"{t}" for t in theta))
     return theta
+
+
+def iterate_theta(theta: _np.ndarray[float]):
+    """
+    The teff, rad and logg for each star is interleaved. This func simplifies access to each
+    stars' params by returning a generator which yields the params for each star as a tuple.
+
+    :theta: the theta value to parse and iterate over
+    :returns: a generator of the tuple (teff, logg, radius, distance, av)
+    """
+    nstars = (theta.shape[0] - 2) // 3
+    dist = theta[-2]
+    av = theta[-1]
+    for star in range(nstars):
+        yield theta[star], theta[nstars*1 + star], theta[nstars*2 + star], dist, av
