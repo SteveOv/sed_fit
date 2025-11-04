@@ -432,7 +432,7 @@ class BtSettlGrid(StellarGrid):
         grid_full_bin_freqs = grid_full_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
         index_names = ["teff", "logg", "metal", "alpha"]
 
-        # Need the files in sorted list as we go through them twice and the order may set indices
+        # Need the files in sorted list as we go through them twice and the order may set indices.
         source_files = sorted(source_files)
         print(f"{cls.__name__}.make_grid_file(): importing {len(source_files)} bt-settl-agss ascii",
               f"grid files into a new compressed model file written to:\n\t{out_file}\n")
@@ -442,10 +442,9 @@ class BtSettlGrid(StellarGrid):
         index_names = index_names[:-1]
         alpha_zero_mask = index_vals["alpha"] == 0
         index_vals = index_vals[alpha_zero_mask][index_names]
-        if sum(~alpha_zero_mask):
-            print(f"Ignoring {sum(~alpha_zero_mask)} grid file(s) where alpha != 0")
 
         # Now set up the multi-D index array and the target bin fluxes grid which we will populate
+        # We can't rely on sorting the files for the correct order as + & - switched for metals.
         teffs = _np.unique(index_vals["teff"])
         loggs = _np.unique(index_vals["logg"])
         metals = _np.unique(index_vals["metal"])
@@ -564,10 +563,14 @@ if __name__ == "__main__":
     # then decompress the tgz contents into the ../.cache/.modelgrids/bt-settl-agss dir
 
     # pylint: disable=protected-access
-    in_files = (StellarGrid._CACHE_DIR / ".modelgrids/bt-settl-agss/").glob("lte*.dat.txt")
-    new_file = BtSettlGrid.make_grid_file(sorted(in_files))
-    bgrid = BtSettlGrid(new_file)
-    print(f"\nLoaded newly created model grid from {new_file}")
+    source_dir = StellarGrid._CACHE_DIR / ".modelgrids/bt-settl-agss/"
+    in_files = sorted(source_dir.glob("lte*.dat.txt"))
+
+    data_file = _Path(f"./sed_fit/data/stellar_grids/bt-settl-agss/{source_dir.name}.npz")
+    BtSettlGrid.make_grid_file(in_files, data_file)
+
+    bgrid = BtSettlGrid(data_file)
+    print(f"\nLoaded model grid from {data_file}")
 
     # Test what has been saved
     print("Teffs:", ",".join(f"{t:.2f}" for t in bgrid._model_full_interp.grid[0]))
@@ -578,6 +581,8 @@ if __name__ == "__main__":
 
     print(f"\nRanges: teff={bgrid.teff_range} {bgrid.teff_unit:unicode},",
           f"logg={bgrid.logg_range} {bgrid.logg_unit:unicode}, metal = {bgrid.metal_range}")
-    print("Test flux for 'GAIA/GAIA3:Gbp' filter, teff=2000, logg=4.0, metal=0, alpha=0:",
-          ", ".join(f"{f:.3f}" for f in bgrid.get_filter_fluxes(["GAIA/GAIA3:Gbp"], 2000, 4, 0)),
+
+    qteff = min(bgrid.teff_range)
+    print(f"Test flux for 'GAIA/GAIA3:Gbp' filter, teff={qteff}, logg=4.0, metal=0, alpha=0:",
+          ", ".join(f"{f:.3f}" for f in bgrid.get_filter_fluxes(["GAIA/GAIA3:Gbp"], qteff, 4, 0)),
           f"[{bgrid.flux_unit:unicode}]")
