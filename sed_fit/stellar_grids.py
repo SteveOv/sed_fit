@@ -228,7 +228,7 @@ class StellarGrid(_AbstractBaseClass):
                           radius: float=None,
                           distance: float=None,
                           av: float=None,
-                          quick: bool=True) -> _np.ndarray[float]:
+                          quick: bool=False) -> _np.ndarray[float]:
         """
         Will return flux values for a target with the requested filters, teff, logg & metal values,
         optionally modified by stellar radius/distance and extinction values.

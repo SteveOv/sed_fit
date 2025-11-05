@@ -84,7 +84,7 @@ def model_func(theta: _np.ndarray[float],
     if stellar_grid is None:
         stellar_grid = _stellar_grid
 
-    y_model = _np.array([stellar_grid.get_filter_fluxes(x, teff, logg, 0, rad, dist, av)
+    y_model = _np.array([stellar_grid.get_filter_fluxes(x, teff, logg, 0, rad, dist, av, quick=True)
                                             for teff, logg, rad, dist, av in iterate_theta(theta)])
 
     if combine:
