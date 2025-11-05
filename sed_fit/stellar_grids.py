@@ -51,7 +51,8 @@ class StellarGrid(_AbstractBaseClass):
                  loggs: _ArrayLike,
                  metals: _ArrayLike,
                  wavelengths: _ArrayLike,
-                 extinction_model: _BaseExtModel=None):
+                 extinction_model: _BaseExtModel=None,
+                 verbose: bool=False):
         """
         Initializes a new instance of this class.
 
@@ -62,27 +63,33 @@ class StellarGrid(_AbstractBaseClass):
         :metals: the model_grid's metal index [2] values
         :wavelengths: the model_grid's wavelength index [2] values
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
+        :verbose: whether or not to output verbose status messages
         """
+        # pylint: disable=multiple-statements
         super().__init__()
 
-        # Create the single interpolator over the full grid of flux data. Used for the interpolation
-        # of full spectrum of fluxes (over the wavelength range) for given teff, logg & metal.
-        index_points = (teffs, loggs, metals)
-        self._model_full_interp = _RegularGridInterpolator(index_points, model_grid, "linear")
+        if verbose:
+            print(self.__class__.__name__)
+            print(f"Loading the grid of fluxes for {len(teffs)} teff, {len(loggs)} logg and",
+                  f"{len(metals)} metal values over {len(wavelengths)} wavelength bins.")
+
+        # Create the single interpolator over the full grid of flux data.
+        # Used for the interpolation of fluxes for given teff, logg, metal & wavelengths.
+        method = "linear"
+        index_points = (teffs, loggs, metals, wavelengths)
+        self._model_full_interp = _RegularGridInterpolator(index_points, model_grid, method)
 
         self._teff_range = (min(teffs), max(teffs))
         self._logg_range = (min(loggs), max(loggs))
         self._metal_range = (min(metals), max(metals))
         self._wavelengths = wavelengths
 
-        # For reddening fluxes
+        # For reddening. The extinction model may restrict the wavelength range we can report on.
         self._extinction_model = extinction_model
-        self._wavenumbers = 1 / (wavelengths << self.wavelength_unit).to(_u.micron).value
-
-        # An extinction model may restrict the wavelength range we can report on
         if extinction_model is not None:
-            self._wavelength_mask = self._wavenumbers >= _np.min(extinction_model.x_range)
-            self._wavelength_mask &= self._wavenumbers <= _np.max(extinction_model.x_range)
+            wavenumbers = 1 / (wavelengths << self.wavelength_unit).to(_u.micron).value
+            self._wavelength_mask = wavenumbers >= _np.min(extinction_model.x_range)
+            self._wavelength_mask &= wavenumbers <= _np.max(extinction_model.x_range)
         else:
             self._wavelength_mask = _np.ones((len(wavelengths)), dtype=bool)
 
@@ -91,40 +98,30 @@ class StellarGrid(_AbstractBaseClass):
             self._filters = { viz: self.get_filter(svo, self._LAM_UNIT)
                                                             for viz, svo in _json_load(j).items() }
             self._filter_names_list = list(self._filters.keys())
+        num_filters = len(self._filter_names_list)
 
-        # Populate a grid of pre-filtered unreddened fluxes. Speed up for get_filter_fluxes if av=0
-        interp_vals_shape = model_grid.shape[:-1]
-        lams = wavelengths
-        grid_filtered = _np.empty(interp_vals_shape + (len(self._filters),))
-        for teff, logg, metal in _product(teffs, loggs, metals):
-            tix = _np.where(teffs == teff)
-            lix = _np.where(loggs == logg)
-            mix = _np.where(metals == metal)
-            fluxes = self._model_full_interp(xi=(teff, logg, metal))
-            for filter_ix, (_, filter_table) in enumerate(self._filters.items()):
-                filter_flux = self._get_filtered_total_flux(lams, fluxes, filter_table)
-                grid_filtered[tix, lix, mix, filter_ix] = filter_flux
+        if verbose:
+            print(f"Calculating grid of pre-filtered unreddened fluxes for {num_filters} filters")
 
-        # Create a table of interpolators, one per filter, for interpolating filter fluxes
-        # for each filter for given teff, logg and metal values.
-        index_points = (teffs, loggs, metals)
-        self._model_interps = _np.empty(shape=(len(self._filters), ),
-                                        dtype=[("filter", "<U50"), ("interp", object)])
-        for filter_ix, filter_name in enumerate(self._filters):
+        # Create a table of interpolators to optimize getting filters' fluxes for given teff,
+        # logg and metal values with no extinction and radius/distance modification applied.
+        self._model_interps = _np.empty((num_filters, ), [("filter", "<U50"), ("interp", object)])
+        index_points, fluxes_shape = (teffs, loggs, metals), model_grid.shape[:-1]  # no wavelengths
+        for filter_ix, filter_name in enumerate(self._filter_names_list):
+            filter_fluxes = _np.empty(shape=fluxes_shape)
+            for teff, logg, metal in _product(teffs, loggs, metals):
+                tix = _np.where(teffs == teff)
+                lix = _np.where(loggs == logg)
+                mix = _np.where(metals == metal)
+                filter_fluxes[tix, lix, mix] = self.get_filter_flux(filter_name, teff, logg, metal)
+
             self._model_interps[filter_ix] = (
-                filter_name,
-                _RegularGridInterpolator(index_points, grid_filtered[:, :, :, filter_ix], "linear")
-            )
+                filter_name, _RegularGridInterpolator(index_points, filter_fluxes, method))
 
     @property
     def extinction_model(self) -> _BaseExtModel:
         """ Get the model used to apply extinction to fluxes """
         return self._extinction_model
-
-    @property
-    def wavenumbers(self) -> _np.ndarray[float]:
-        """ Gets the wavenumbers (1 / micron) of the flux wavelengths. """
-        return self._wavenumbers[self._wavelength_mask]
 
     @property
     def wavelengths(self) -> _np.ndarray:
@@ -177,10 +174,8 @@ class StellarGrid(_AbstractBaseClass):
 
     def get_filter_indices(self, filter_names: _Union[str, _Iterable]) -> _np.ndarray[int]:
         """
-        Get the indices of the given filters. Useful in optimizing filter access when iterating
-        as the indices can be used in place of the names. Handles mapping filter names.
-
-        Will raise a ValueError if a filter is unknown.
+        Get the indices of the given filters. Useful in optimizing filter access when iterating as
+        the indices can be used in place of the names. Raises a ValueError if a filter is unknown.
 
         :filter_names: a list of filters for which we want the indices
         :returns: an array of the equivalent indices
@@ -195,28 +190,35 @@ class StellarGrid(_AbstractBaseClass):
                    metal: float=0,
                    radius: float=None,
                    distance: float=None,
-                   av: float=None) -> _np.ndarray[float]:
+                   av: float=None,
+                   wavelengths: _ArrayLike=None) -> _np.ndarray[float]:
         """
-        Will return a full spectrum of fluxes, over this model's wavelength range for the
-        requested teff, logg and metal values.
+        Will return flux values for a target with the requested teff, logg, metal & (optional)
+        wavelength values, optionally modified by stellar radius/distance and extinction values.
 
-        If both radius and distance are given the fluxes will be modified for a star of the given
-        radius (in R_Sun) at the given distance (in pc).
-
-        :teff: the effective temperature for the fluxes
+        :teff: the effective temperature value for the fluxes (in K)
         :logg: the logg for the fluxes
         :metal: the metallicity for the fluxes
         :radius: optional stellar radius value in R_sun
         :distance: optional stellar distance value in pc
         :av: optional A_v value with which to redden fluxes, if we also have an extinction model
+        :wavelengths: optional array of wavelengths to get fluxes for or will use the grids bins
         :returns: the resulting flux values (in implied flux_units)
         """
-        flux = self._model_full_interp(xi=(teff, logg, metal))[self._wavelength_mask]
+        if wavelengths is None:
+            wavelengths = self.wavelengths
+
+        fluxes = self._model_full_interp(xi=(teff, logg, metal, wavelengths))
+
         if radius is not None and distance is not None:
-            flux *= ((radius * self._R_sun) / (distance * self._pc))**2
-        if av is not None and self.extinction_model is not None:
-            flux *= self.extinction_model.extinguish(self.wavenumbers << (1 / _u.um), Av=av)
-        return flux
+            fluxes *= ((radius * self._R_sun) / (distance * self._pc))**2
+
+        if av:
+            if self.extinction_model is None:
+                raise ValueError("av specified but cannot redden flux without an extinction_model")
+            wavenumbers = (1 / (wavelengths << self.wavelength_unit)).to(1 / _u.um)
+            fluxes *= self.extinction_model.extinguish(wavenumbers, Av=av)
+        return fluxes
 
     def get_filter_fluxes(self,
                           filters: _ArrayLike,
@@ -227,17 +229,14 @@ class StellarGrid(_AbstractBaseClass):
                           distance: float=None,
                           av: float=None) -> _np.ndarray[float]:
         """
-        Will return a ndarray of flux values calculated for requested filter names at
-        the chosen effective temperature, logg and metallicity values.
-
-        If both radius and distance are given the fluxes will be modified for a star of the given
-        radius (in R_Sun) at the given distance (in pc).
+        Will return flux values for a target with the requested filters, teff, logg & metal values,
+        optionally modified by stellar radius/distance and extinction values.
 
         Will raise a ValueError if a named filter is unknown.
         Will raise IndexError if an indexed filter is out of range.
 
         :filters: a list of filter names or indices for which we are generating fluxes
-        :teff: the effective temperature for the fluxes
+        :teff: the effective temperature value for the fluxes (in K)
         :logg: the logg for the fluxes
         :metal: the metallicity for the fluxes
         :radius: optional stellar radius value in R_sun
@@ -252,31 +251,68 @@ class StellarGrid(_AbstractBaseClass):
         else:
             unique_filters, flux_mappings = _np.unique(filters, return_inverse=True)
 
-        if not av: # so None or 0.0
-            # As there's no av we can use the pre-calculated grid of unreddened filter fluxes
+        if av:
+            fluxes = _np.array([self.get_filter_flux(f, teff, logg, metal, radius, distance, av)
+                                                                        for f in unique_filters])
+        else: # No extinction required, so we can speed up by using the pre-calculated grid
             if unique_filters.dtype not in (_np.int64, _np.int32): # Need the filters' column index
                 unique_filters = self.get_filter_indices(unique_filters)
-            filter_flux = _np.array([
-                self._model_interps[f]["interp"]((teff, logg, metal)) for f in unique_filters])
 
-            # Optionally adjust for stellar params
+            fluxes = _np.array([
+                self._model_interps[f]["interp"](xi=(teff, logg, metal)) for f in unique_filters])
+
+            # These fluxes are for zero radius & dist, so we may need to adjust for stellar params
             if radius is not None and distance is not None:
-                filter_flux *= ((radius * self._R_sun) / (distance * self._pc))**2
-        elif self.extinction_model is not None:
-            # Get the full set of reddened fluxes and will apply rad/distance as appropriate.
-            lam = self.wavelengths
-            flux = self.get_fluxes(teff, logg, metal, radius, distance, av)
+                fluxes *= ((radius * self._R_sun) / (distance * self._pc))**2
 
-            # Now apply the filters
-            if unique_filters.dtype in (_np.int64, _np.int32):  # Need the names of the filters
-                unique_filters = [self._filter_names_list[i] for i in unique_filters]
-            filter_flux = _np.array([
-                self._get_filtered_total_flux(lam, flux, self._filters[f]) for f in unique_filters])
+        # Map these fluxes onto the response, where a filter/flux may appear more than once
+        return _np.array([fluxes[m] for m in flux_mappings], dtype=float)
+
+    def get_filter_flux(self,
+                        the_filter: _Union[str, int],
+                        teff: float,
+                        logg: float,
+                        metal: float,
+                        radius: float=None,
+                        distance: float=None,
+                        av: float=None) -> float:
+        """
+        Will return flux values for a target with the requested filter, teff, logg & metal values,
+        optionally modified by stellar radius/distance and extinction values.
+
+        Will raise a ValueError if a named filter is unknown.
+        Will raise IndexError if an indexed filter is out of range.
+
+        :the_filter: the chosen filter by name or index
+        :teff: the effective temperature value for the fluxes (in K)
+        :logg: the logg for the fluxes
+        :metal: the metallicity for the fluxes
+        :radius: optional stellar radius value in R_sun
+        :distance: optional stellar distance value in pc
+        :av: optional A_v value with which to redden fluxes, if we also have an extinction model
+        :returns: the resulting flux value (in implied flux_units)
+        """
+        if isinstance(the_filter, int):
+            filter_table = self._filters[self._filter_names_list[the_filter]]
         else:
-            raise ValueError("av specified but unable to redden flux without an extinction_model")
+            filter_table = self._filters[the_filter]
 
-        # Map these fluxes onto the response, where a filter/flux may appear >1 times
-        return _np.array([filter_flux[m] for m in flux_mappings], dtype=float)
+        # Work out the lambda range where the filter and binned data overlap
+        ol_lam_short = max(min(self.wavelength_range), filter_table.meta["filter_short"].value)
+        ol_lam_long = min(max(self.wavelength_range), filter_table.meta["filter_long"].value)
+
+        if ol_lam_short > ol_lam_long: # No overlap; no flux
+            return 0.0
+
+        # Get the filter's wavelengths & transmission coeffs in the region it overlaps the fluxes
+        filter_lam = filter_table["Wavelength"].quantity.value
+        filter_ol_mask = (ol_lam_short <= filter_lam) & (filter_lam <= ol_lam_long)
+        filter_lam = filter_lam[filter_ol_mask]
+        filter_trans = filter_table["Norm-Transmission"][filter_ol_mask].value
+
+        filter_fluxes = self.get_fluxes(teff, logg, metal, radius, distance, av, filter_lam)
+        return _np.sum(filter_fluxes * filter_trans)
+
 
     @classmethod
     def get_filter(cls, svo_name: str, lambda_unit: _u.Unit) -> _Table:
@@ -315,36 +351,6 @@ class StellarGrid(_AbstractBaseClass):
 
         table.sort("Wavelength")
         return table
-
-    @classmethod
-    def _get_filtered_total_flux(cls,
-                                 lambdas: _ArrayLike,
-                                 fluxes: _ArrayLike,
-                                 filter_table: _Table) -> _u.Quantity:
-        """
-        Calculate the total flux across a filter's bandpass.
-
-        :lambdas: the wavelengths of the model fluxes
-        :fluxes: the model fluxes
-        :filter_grid: the grid (as returned by get_filter()) which describes the filter
-        :returns: the summed flux passed through the filter
-        """
-        # Work out the lambda range where the filter and binned data overlap
-        ol_lam_short = max(lambdas.min(), filter_table.meta["filter_short"].value)
-        ol_lam_long = min(lambdas.max(), filter_table.meta["filter_long"].value)
-
-        if ol_lam_short > ol_lam_long: # No overlap; no flux
-            return 0.0
-
-        # Get the filter's transmission coeffs in the region it overlaps the fluxes
-        filter_lam = filter_table["Wavelength"].quantity.value
-        filter_ol_mask = (ol_lam_short <= filter_lam) & (filter_lam <= ol_lam_long)
-        filter_lam = filter_lam[filter_ol_mask]
-        filter_trans = filter_table["Norm-Transmission"][filter_ol_mask].value
-
-        # Apply the filter & calculate overall transmitted flux value
-        filter_fluxes = _np.interp(filter_lam, lambdas, fluxes) * filter_trans
-        return _np.sum(filter_fluxes)
 
     @classmethod
     def _bin_fluxes(cls,
@@ -390,13 +396,15 @@ class BtSettlGrid(StellarGrid):
 
     def __init__(self,
                  data_file: _Path=_DEF_MODEL_FILE,
-                 extinction_model: _BaseExtModel=None):
+                 extinction_model: _BaseExtModel=None,
+                 verbose: bool=False):
         """
         Initializes a new instance of this class.
 
         :data_file: the source of the model data, in numpy npz format
         :filter_map_file: json file containing mappings from VizieR to SVO filter names
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
+        :verbose: whether or not to output verbose status messages
         """
         with _np.load(data_file, allow_pickle=True) as df:
             model_grid_full = df["grid_full"]
@@ -411,7 +419,8 @@ class BtSettlGrid(StellarGrid):
                          loggs=loggs,
                          metals=metals,
                          wavelengths=wavelengths,
-                         extinction_model=extinction_model)
+                         extinction_model=extinction_model,
+                         verbose=verbose)
 
     @classmethod
     def make_grid_file(cls,
@@ -569,7 +578,7 @@ if __name__ == "__main__":
     data_file = _Path(f"./sed_fit/data/stellar_grids/bt-settl-agss/{source_dir.name}.npz")
     BtSettlGrid.make_grid_file(in_files, data_file)
 
-    bgrid = BtSettlGrid(data_file)
+    bgrid = BtSettlGrid(data_file, verbose=True)
     print(f"\nLoaded model grid from {data_file}")
 
     # Test what has been saved

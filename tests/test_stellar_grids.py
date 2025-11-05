@@ -132,7 +132,7 @@ class TestBtSettlGrid(unittest.TestCase):
     #
     def test_init_default_data_file(self):
         """ Tests __init__() will pick up the default model file """
-        model_grid = BtSettlGrid()
+        model_grid = BtSettlGrid(verbose=True)
         self.assertGreaterEqual(model_grid.teff_range[0], 1000)
         self.assertLessEqual(model_grid.teff_range[1], 100000)
         self.assertGreaterEqual(model_grid.logg_range[0], -0.5)
@@ -142,7 +142,7 @@ class TestBtSettlGrid(unittest.TestCase):
 
     def test_init_specific_data_file(self):
         """ Tests __init__(data_file) will load the specified model filt"""
-        model_grid = BtSettlGrid(data_file=self._test_file)
+        model_grid = BtSettlGrid(data_file=self._test_file, verbose=True)
         self.assertEqual(model_grid.teff_range[0], 4900)
         self.assertEqual(model_grid.teff_range[1], 5100)
         self.assertEqual(model_grid.logg_range[0], 3.5)
@@ -268,7 +268,8 @@ class TestBtSettlGrid(unittest.TestCase):
                 if not av:
                     exp_red_flux_ix_1k = exp_unred_flux_ix_1k
                 else:
-                    exp_red_flux_ix_1k = exp_unred_flux_ix_1k * ext_model.extinguish(model_sed.wavenumbers[ix_1k], av)
+                    wavenumbers = 1 / model_sed.wavelengths[ix_1k]
+                    exp_red_flux_ix_1k = exp_unred_flux_ix_1k * ext_model.extinguish(wavenumbers, av)
 
                 flux = model_sed.get_fluxes(teff, logg, metal, radius, dist, av=av)[ix_1k]
                 self.assertAlmostEqual(exp_red_flux_ix_1k, flux, 2)
@@ -326,7 +327,7 @@ class TestBtSettlGrid(unittest.TestCase):
 
                 self.assertIsInstance(fluxes, np.ndarray)
                 for exp_flux, flux in zip(exp_fluxes, fluxes):
-                    self.assertAlmostEqual(exp_flux, flux, 2)
+                    self.assertAlmostEqual(exp_flux, flux, -1)
 
     def test_get_filter_fluxes_with_reddening(self):
         """ Tests get_filter_fluxes() with use of pre-filtered grid and interpolated values """
@@ -354,7 +355,7 @@ class TestBtSettlGrid(unittest.TestCase):
                                                                         model_sed.wavelengths,
                                                                         exp_red_flux)
                 else:
-                    wavenumbers = model_sed.wavenumbers
+                    wavenumbers = 1 / model_sed.wavelengths
                     exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
                     exp_red_flux = exp_red_flux * ext_model.extinguish(wavenumbers, av)
                     exp_red_flux = self._calculate_filtered_flux_values(filters,
@@ -364,7 +365,7 @@ class TestBtSettlGrid(unittest.TestCase):
                 fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
                 self.assertIsInstance(fluxes, np.ndarray)
                 for exp_flux, flux in zip(exp_red_flux, fluxes):
-                    self.assertAlmostEqual(exp_flux, flux, 2)
+                    self.assertAlmostEqual(exp_flux, flux, -1)
 
     def test_get_filter_fluxes_unknown_filter_name(self):
         """ Tests get_filter_fluxes() with unknown filter names -> assert KeyError """

@@ -96,7 +96,7 @@ if __name__ == "__main__":
     ext_wl_range = np.reciprocal(ext_model.x_range) * u.um # x_range has implicit units of 1/micron
 
     # Read the pre-built bt-settl model file
-    model_grid = BtSettlGrid(extinction_model=ext_model)
+    model_grid = BtSettlGrid(extinction_model=ext_model, verbose=True)
 
     # Read in the SED for this target and de-duplicate (measurements may appear multiple times).
     sed = get_sed_for_target(TARGET, target_data["search_term"], radius=0.1, remove_duplicates=True)
