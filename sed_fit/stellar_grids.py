@@ -52,6 +52,7 @@ class StellarGrid(_AbstractBaseClass):
                  metals: _ArrayLike,
                  wavelengths: _ArrayLike,
                  extinction_model: _BaseExtModel=None,
+                 interp_method: str="linear",
                  verbose: bool=False):
         """
         Initializes a new instance of this class.
@@ -63,21 +64,23 @@ class StellarGrid(_AbstractBaseClass):
         :metals: the model_grid's metal index [2] values
         :wavelengths: the model_grid's wavelength index [2] values
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
+        :interp_method: the method used by interpolators
         :verbose: whether or not to output verbose status messages
         """
         # pylint: disable=multiple-statements
         super().__init__()
 
         if verbose:
-            print(self.__class__.__name__)
-            print(f"Loading the grid of fluxes for {len(teffs)} teff, {len(loggs)} logg and",
-                  f"{len(metals)} metal values over {len(wavelengths)} wavelength bins.")
+            print(f"{self.__class__.__name__} is initializing the fluxes interpolator with the",
+                  f"grid of {len(teffs)} teff, {len(loggs)} logg & {len(metals)} metal values and",
+                  f"{len(wavelengths)} wavelength bins", end="...", flush=True)
 
         # Create the single interpolator over the full grid of flux data.
         # Used for the interpolation of fluxes for given teff, logg, metal & wavelengths.
-        method = "linear"
+        if verbose: print(f"will use {interp_method} interpolation", end="...", flush=True)
         index_points = (teffs, loggs, metals, wavelengths)
-        self._model_full_interp = _RegularGridInterpolator(index_points, model_grid, method)
+        self._model_full_interp = _RegularGridInterpolator(index_points, model_grid, interp_method)
+        if verbose: print("done.")
 
         self._teff_range = (min(teffs), max(teffs))
         self._logg_range = (min(loggs), max(loggs))
@@ -98,16 +101,16 @@ class StellarGrid(_AbstractBaseClass):
             self._filters = { viz: self.get_filter(svo, self._LAM_UNIT)
                                                             for viz, svo in _json_load(j).items() }
             self._filter_names_list = list(self._filters.keys())
-        num_filters = len(self._filter_names_list)
-
-        if verbose:
-            print(f"Calculating grid of pre-filtered unreddened fluxes for {num_filters} filters")
+        nfilters = len(self._filter_names_list)
 
         # Create a table of interpolators to optimize getting filters' fluxes for given teff,
         # logg and metal values with no extinction and radius/distance modification applied.
-        self._model_interps = _np.empty((num_filters, ), [("filter", "<U50"), ("interp", object)])
+        if verbose: print(f"Initializing unreddened fluxes for {nfilters} filters", end="")
+        self._model_interps = _np.empty((nfilters, ),
+                                        [("filter", "<U50"), ("mid", float), ("interp", object)])
         index_points, fluxes_shape = (teffs, loggs, metals), model_grid.shape[:-1]  # no wavelengths
-        for filter_ix, filter_name in enumerate(self._filter_names_list):
+        for filter_ix, (filter_name, filter_table) in enumerate(self._filters.items()):
+            if verbose: print(".", end="", flush=True)
             filter_fluxes = _np.empty(shape=fluxes_shape)
             for teff, logg, metal in _product(teffs, loggs, metals):
                 tix = _np.where(teffs == teff)
@@ -116,7 +119,11 @@ class StellarGrid(_AbstractBaseClass):
                 filter_fluxes[tix, lix, mix] = self.get_filter_flux(filter_name, teff, logg, metal)
 
             self._model_interps[filter_ix] = (
-                filter_name, _RegularGridInterpolator(index_points, filter_fluxes, method))
+                filter_name,
+                filter_table.meta["filter_mid"].to(_u.um).value,
+                _RegularGridInterpolator(index_points, filter_fluxes, interp_method)
+            )
+        if verbose: print("done.")
 
     @property
     def extinction_model(self) -> _BaseExtModel:
@@ -424,12 +431,14 @@ class BtSettlGrid(StellarGrid):
             metals = meta["metals"]
             wavelengths = meta["wavelengths"]
 
+        # The spline methods require >1 options across all dimensions.
         super().__init__(model_grid=model_grid_full,
                          teffs=teffs,
                          loggs=loggs,
                          metals=metals,
                          wavelengths=wavelengths,
                          extinction_model=extinction_model,
+                         interp_method="slinear" if min(model_grid_full.shape) > 1 else "linear",
                          verbose=verbose)
 
     @classmethod
