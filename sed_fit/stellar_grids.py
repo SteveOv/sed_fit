@@ -227,10 +227,16 @@ class StellarGrid(_AbstractBaseClass):
                           metal: float=0.,
                           radius: float=None,
                           distance: float=None,
-                          av: float=None) -> _np.ndarray[float]:
+                          av: float=None,
+                          quick: bool=True) -> _np.ndarray[float]:
         """
         Will return flux values for a target with the requested filters, teff, logg & metal values,
         optionally modified by stellar radius/distance and extinction values.
+
+        If quick is True, the fluxes returned will be derived from the pre-filtered and unreddened
+        fluxes calculated when this instance was initialized. Any extinction calculation will be
+        simplified; being based on each filter's total transmitted flux and its bandpass midpoint.
+        If quick is False, extinction will be calculated for every wavelength bin of each filter.
 
         Will raise a ValueError if a named filter is unknown.
         Will raise IndexError if an indexed filter is out of range.
@@ -242,6 +248,7 @@ class StellarGrid(_AbstractBaseClass):
         :radius: optional stellar radius value in R_sun
         :distance: optional stellar distance value in pc
         :av: optional A_v value with which to redden fluxes, if we also have an extinction model
+        :quick: True forces the use of the pre-filtered fluxes as basis of returned filtered fluxes
         :returns: the resulting flux values (in implied flux_units)
         """
         # Find the unique filters and the map onto the request/response (a filter can appear > once)
@@ -251,19 +258,22 @@ class StellarGrid(_AbstractBaseClass):
         else:
             unique_filters, flux_mappings = _np.unique(filters, return_inverse=True)
 
-        if av:
-            fluxes = _np.array([self.get_filter_flux(f, teff, logg, metal, radius, distance, av)
-                                                                        for f in unique_filters])
-        else: # No extinction required, so we can speed up by using the pre-calculated grid
+        if quick or not av:
             if unique_filters.dtype not in (_np.int64, _np.int32): # Need the filters' column index
                 unique_filters = self.get_filter_indices(unique_filters)
 
             fluxes = _np.array([
                 self._model_interps[f]["interp"](xi=(teff, logg, metal)) for f in unique_filters])
 
-            # These fluxes are for zero radius & dist, so we may need to adjust for stellar params
-            if radius is not None and distance is not None:
+            if radius and distance:
                 fluxes *= ((radius * self._R_sun) / (distance * self._pc))**2
+
+            if av: # Apply approximate extinction based on the filters' midpoint wavelength
+                wavenumbers = [1/self._model_interps[f]["mid"] for f in unique_filters] << (1/_u.um)
+                fluxes *= self.extinction_model.extinguish(wavenumbers, Av=av)
+        else:
+            fluxes = _np.array([self.get_filter_flux(f, teff, logg, metal, radius, distance, av)
+                                                                        for f in unique_filters])
 
         # Map these fluxes onto the response, where a filter/flux may appear more than once
         return _np.array([fluxes[m] for m in flux_mappings], dtype=float)
@@ -292,10 +302,10 @@ class StellarGrid(_AbstractBaseClass):
         :av: optional A_v value with which to redden fluxes, if we also have an extinction model
         :returns: the resulting flux value (in implied flux_units)
         """
-        if isinstance(the_filter, int):
-            filter_table = self._filters[self._filter_names_list[the_filter]]
-        else:
+        if isinstance(the_filter, str):
             filter_table = self._filters[the_filter]
+        else:
+            filter_table = self._filters[self._filter_names_list[the_filter]]
 
         # Work out the lambda range where the filter and binned data overlap
         ol_lam_short = max(min(self.wavelength_range), filter_table.meta["filter_short"].value)

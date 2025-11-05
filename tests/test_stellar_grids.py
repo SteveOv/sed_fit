@@ -339,14 +339,17 @@ class TestBtSettlGrid(unittest.TestCase):
         multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
         r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2
 
-        for filters,                teff,   logg,   metal,  rad,    dist,   av,     exp_unred_fluxes,       msg in [
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          "unreddened single filter"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          "unreddened multiple filters"),
+        for filters,                teff,   logg,   metal,  rad,    dist,   av,     quick,  exp_unred_fluxes,       msg in [
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   False,  t5000_l40_m00,          "unreddened single filter"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   False,  t5000_l40_m00,          "unreddened multiple filters"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   True,   t5000_l40_m00,          "quick unreddened single filter"),
             # with av specified
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          "reddened single filter no rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          "reddened multiple filters no rad/dist"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, "reddened single filter no rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, "reddened multiple filters with rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    False,  t5000_l40_m00,          "reddened single filter no rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    False,  t5000_l40_m00,          "reddened multiple filters no rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    False,  t5000_l40_m00 * r1_d10, "reddened single filter with rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    False,  t5000_l40_m00 * r1_d10, "reddened multiple filters with rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    True,   t5000_l40_m00 * r1_d10, "quick reddened single filter with rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    True,   t5000_l40_m00 * r1_d10, "quick reddened multiple filters with rad/dist"),
         ]:
             with self.subTest(msg=msg):
                 if not av:
@@ -362,7 +365,7 @@ class TestBtSettlGrid(unittest.TestCase):
                                                                         model_sed.wavelengths,
                                                                         exp_red_flux)
 
-                fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
+                fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av, quick)
                 self.assertIsInstance(fluxes, np.ndarray)
                 for exp_flux, flux in zip(exp_red_flux, fluxes):
                     self.assertAlmostEqual(exp_flux, flux, -1)
