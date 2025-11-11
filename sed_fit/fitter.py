@@ -175,29 +175,28 @@ def minimize_fit(x: _np.ndarray[float],
         _fixed_theta, _fit_mask = _np.where(fit_mask, None, theta0), fit_mask
         _ln_prior_func, _stellar_grid = ln_prior_func, stellar_grid
 
-        the_soln, the_meth = None, None
+        best_soln, best_method = None, None
         for method in methods:
-            a_soln = _minimize(_objective_func, x0=theta0[fit_mask], args=(True), # minimizable
-                               method=method, options={ "maxiter": max_iters, "maxfev": max_iters })
+            soln = _minimize(_objective_func, x0=theta0[fit_mask], args=(True), # minimizable
+                             method=method, options={ "maxiter": max_iters, "maxfev": max_iters })
             if verbose:
-                print(f"({method})",
-                        "succeeded" if a_soln.success else f"failed [{a_soln.message}]",
-                        f"after {a_soln.nit:d} iterations & {a_soln.nfev:d} function evaluation(s)",
-                        f"[fun = {a_soln.fun:.6f}]")
+                print(f"({method})", "succeeded" if soln.success else f"failed [{soln.message}]",
+                        f"after {soln.nit:d} iterations & {soln.nfev:d} function evaluation(s)",
+                        f"[fun = {soln.fun:.6f}]")
 
-            if the_soln is None \
-                    or (a_soln.success and not the_soln.success) \
-                    or (a_soln.fun < the_soln.fun):
-                the_soln, the_meth = a_soln, method
+            if best_soln is None \
+                    or (soln.success and not best_soln.success) \
+                    or (soln.success == best_soln.success and soln.fun < best_soln.fun):
+                best_soln, best_method = soln, method
 
-    if the_soln.success:
-        theta0[fit_mask] = the_soln.x
+    if best_soln.success:
+        theta0[fit_mask] = best_soln.x
         if verbose:
-            _print_theta(theta0, fit_mask, f"The best fit with {the_meth} method yielded theta=")
+            _print_theta(theta0, fit_mask, f"The best fit with {best_method} method yielded theta=")
     else:
         _print_theta(theta0, fit_mask, "The fit failed so returning input, theta0=")
 
-    return theta0, the_soln
+    return theta0, best_soln
 
 
 def mcmc_fit(x: _np.ndarray[float],
