@@ -277,9 +277,10 @@ def mcmc_fit(x: _np.ndarray[float],
                 step = sampler.iteration * thin_by
                 if step > min_steps_es and step % 1000 == 0:
                     # The autocor time (tau) is the steps to effectively forget start position.
-                    # As the fit converges the change in tau will tend towards zero.
+                    # As the fit converges the change in tau will tend towards zero. We set tol=0
+                    # to prevent chain-too-short warning while we're expliciting testing the fit.
                     prev_tau = tau
-                    tau = sampler.get_autocorr_time(c=5, tol=autocor_tol, quiet=True) * thin_by
+                    tau = sampler.get_autocorr_time(c=5, tol=0, quiet=True) * thin_by
                     if not any(_np.isnan(tau)) \
                             and all(tau < step / 100) \
                             and all(abs(prev_tau - tau) / prev_tau < 0.01):
