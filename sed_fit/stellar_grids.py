@@ -586,34 +586,3 @@ class BtSettlGrid(StellarGrid):
                 if all(n in metadata.keys() for n in index_names):
                     index_list += [tuple(metadata[k] for k in index_names)]
         return _np.array(sorted(index_list), dtype=[(k, float) for k in index_names])
-
-
-if __name__ == "__main__":
-    # Download bt-settl-aggs ascii model grids from following url
-    # https://svo2.cab.inta-csic.es/theory/newov2/index.php?models=bt-settl-agss
-    # then decompress the tgz contents into the ../.cache/.modelgrids/bt-settl-agss dir
-
-    # pylint: disable=protected-access
-    source_dir = StellarGrid._CACHE_DIR / ".modelgrids/bt-settl-agss/"
-    in_files = sorted(source_dir.glob("lte*.dat.txt"))
-
-    data_file = _Path(f"./sed_fit/data/stellar_grids/bt-settl-agss/{source_dir.name}.npz")
-    BtSettlGrid.make_grid_file(in_files, data_file)
-
-    bgrid = BtSettlGrid(data_file, verbose=True)
-    print(f"\nLoaded model grid from {data_file}")
-
-    # Test what has been saved
-    print("Teffs:", ",".join(f"{t:.2f}" for t in bgrid._model_full_interp.grid[0]))
-    print("loggs:", ",".join(f"{l:.2f}" for l in bgrid._model_full_interp.grid[1]))
-    print("metals:", ",".join(f"{m:.2f}" for m in bgrid._model_full_interp.grid[2]))
-
-    print( "Filters:", ", ".join(bgrid._filter_names_list))
-
-    print(f"\nRanges: teff={bgrid.teff_range} {bgrid.teff_unit:unicode},",
-          f"logg={bgrid.logg_range} {bgrid.logg_unit:unicode}, metal = {bgrid.metal_range}")
-
-    qteff = min(bgrid.teff_range)
-    print(f"Test flux for 'GAIA/GAIA3:Gbp' filter, teff={qteff}, logg=4.0, metal=0, alpha=0:",
-          ", ".join(f"{f:.3f}" for f in bgrid.get_filter_fluxes(["GAIA/GAIA3:Gbp"], qteff, 4, 0)),
-          f"[{bgrid.flux_unit:unicode}]")
