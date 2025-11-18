@@ -29,6 +29,6 @@ if __name__ == "__main__":
     in_files = sorted((Path.cwd() / ".cache/.modelgrids/bt-settl-agss/").glob("lte*.dat.txt"))
     data_file = Path("./sed_fit/data/stellar_grids/bt-settl-agss/bt-settl-agss.npz")
 
-    # BtSettlGrid.make_grid_file(in_files, data_file)
+    BtSettlGrid.make_grid_file(in_files, data_file)
 
     quick_test_stellar_grid_lookup(BtSettlGrid(data_file, verbose=True))
