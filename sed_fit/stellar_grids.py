@@ -1,5 +1,5 @@
 """ A class for handling the generation of model fluxes for filters sourced from bt-settl data """
-# pylint: disable=no-member
+# pylint: disable=no-member, multiple-statements
 from abc import ABC as _AbstractBaseClass
 from typing import Union as _Union, Tuple as _Tuple, Iterable as _Iterable, List as _List
 from pathlib import Path as _Path
@@ -67,7 +67,6 @@ class StellarGrid(_AbstractBaseClass):
         :interp_method: the method used by interpolators
         :verbose: whether or not to output verbose status messages
         """
-        # pylint: disable=multiple-statements
         super().__init__()
 
         if verbose:
@@ -111,7 +110,7 @@ class StellarGrid(_AbstractBaseClass):
         index_points, fluxes_shape = (teffs, loggs, metals), model_grid.shape[:-1]  # no wavelengths
         for filter_ix, (filter_name, filter_table) in enumerate(self._filters.items()):
             if verbose: print(".", end="", flush=True)
-            filter_fluxes = _np.empty(shape=fluxes_shape)
+            filter_fluxes = _np.empty(shape=fluxes_shape, dtype=_np.float32)
             for teff, logg, metal in _product(teffs, loggs, metals):
                 tix = _np.where(teffs == teff)
                 lix = _np.where(loggs == logg)
@@ -431,7 +430,7 @@ class BtSettlGrid(StellarGrid):
             metals = meta["metals"]
             wavelengths = meta["wavelengths"]
 
-        # The spline methods require >1 options across all dimensions.
+        # The spline methods require k+1 options across all dimensions.
         super().__init__(model_grid=model_grid_full,
                          teffs=teffs,
                          loggs=loggs,
@@ -478,12 +477,12 @@ class BtSettlGrid(StellarGrid):
         metals = _np.unique(index_vals["metal"])
         folded_index_shape = (len(teffs), len(loggs), len(metals))
         index_vals = index_vals.reshape(folded_index_shape)
-        grid_full = _np.full(folded_index_shape + (grid_full_nbins, ), _np.nan, float)
+        grid_full = _np.full(folded_index_shape + (grid_full_nbins, ), _np.nan, _np.float32)
 
         # Read in each source file, parse it, calculate the bin fluxes then store a row in the grid
         for file_ix, source_file in enumerate(source_files):
             meta = cls._read_metadata_from_ascii_model_file(source_file)
-            print(f"{file_ix+1}/{len(source_files)} {source_file.name}", end="...")
+            print(f"{file_ix+1}/{len(source_files)} {source_file.name}", end="...", flush=True)
 
             if meta["alpha"] != 0:
                 print(f"skipped row as alpha != 0 ({meta['alpha']})")
@@ -494,30 +493,34 @@ class BtSettlGrid(StellarGrid):
                                 .to(cls._FLUX_DENSITY_UNIT, equivalencies=_u.spectral_density(lams))
 
                 print(f"[{len(lams):,d} rows]:",
-                      ", ".join(f"{k}={meta[k]: .2f}" for k in index_names), end="...")
+                      ", ".join(f"{k}={meta[k]: .2f}" for k in index_names), end="...", flush=True)
 
                 # Write the row of binned fluxes to the full grid.
                 bin_flux_densities = cls._bin_fluxes(lams, flux_densities, grid_full_bin_lams)
                 tix = _np.where(teffs == meta["teff"])
                 lix = _np.where(loggs == meta["logg"])
                 mix = _np.where(metals == meta["metal"])
-                grid_full[tix, lix, mix] = (bin_flux_densities *  grid_full_bin_freqs).value
+                grid_full[tix, lix, mix] = (bin_flux_densities * grid_full_bin_freqs).value
 
                 print(f"added row of {grid_full_nbins} binned fluxes")
 
         # Interpolate any gaps in the grid. We can't interpolate on dimensions with only one choice.
-        print("Interpolating missing values", end="...")
-        index_dim_has_multi = _np.array([d for d, size in enumerate(index_vals.shape) if size > 1])
-        neighbours = 4**(len(index_names)) # limit RBF mem usage; otherwise scales as ~points^2
+        print("Interpolating missing values", end="...", flush=True)
+        index_dim_multi = _np.array([d for d, size in enumerate(index_vals.shape) if size > 1])
+        neighbours = 4**index_vals.ndim # limit RBF mem usage; otherwise scales as ~points^2
         for wix in range(grid_full_nbins):
+            if wix % 100 == 0 and wix > 0: print(".", end="", flush=True)
             nans = _np.isnan(grid_full[:, :, :, wix])    # This lam across all other dims
             if _np.all(nans):
                 raise ValueError("Ooops! Nothing to interp from")
             if _np.any(nans):
-                # Awkward; each index is a tuple of vals & we can't mask or use index lists on them
-                pts = _np.array([[ix[d] for d in index_dim_has_multi] for ix in index_vals[~nans]])
-                xi = _np.array([[ix[d] for d in index_dim_has_multi] for ix in index_vals[nans]])
-                grid_full[nans, wix] = _RBFInterpolator(pts, grid_full[~nans, wix], neighbours)(xi)
+                # Awkward; each index is a tuple of vals & we can't mask or use index lists on them.
+                # Get pts into 2-d array of shape (npoints, ndims) skipping axes with single choice.
+                pts = _np.array([[ix[d] for d in index_dim_multi] for ix in index_vals[~nans]])
+                vals = grid_full[~nans, wix]
+                int_pts = _np.array([[ix[d] for d in index_dim_multi] for ix in index_vals[nans]])
+                int_vals = _RBFInterpolator(pts, vals, neighbours, 5, "thin_plate_spline")(int_pts)
+                grid_full[nans, wix] = _np.maximum(int_vals, 0.0)
         print("done.")
 
         # Complete the metadata; row indices and col indices (filters & wavelengths)
