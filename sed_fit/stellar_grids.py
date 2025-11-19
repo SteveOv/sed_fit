@@ -9,6 +9,7 @@ import re as _re
 from json import load as _json_load
 from urllib.parse import quote_plus as _quote_plus
 from itertools import product as _product
+from datetime import datetime as _datetime, timezone as _timezone
 
 import numpy as _np
 from numpy.typing import ArrayLike as _ArrayLike
@@ -395,13 +396,23 @@ class StellarGrid(_AbstractBaseClass):
         return result.statistic << fluxes.unit
 
 
-class BtSettlGrid(StellarGrid):
+class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
     """
-    Generates model SED fluxes from pre-built grids of bt-settl-agss model fluxes.
+    Base class, building on StellarGrid, of grids based on the ascii text format seen for at least
+    BtSettl and Coelho grids published by the SVO at https://svo2.cab.inta-csic.es/theory/newov2/
     """
-    # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals
+    # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, line-too-long
 
-    _DEF_MODEL_FILE = StellarGrid._this_dir / "data/stellar_grids/bt-settl-agss/bt-settl-agss.npz"
+    # The top of the files are expected to resemble the example below (with leading # chars)
+    #
+    # Coelho Synthetic stellar library (SEDs)
+    # teff = 3800 K (value for the effective temperature for the model. Temperatures are given in K)
+    # logg = 5 log(cm/s2) (value for Log(G) for the model.)
+    # meta = -0.5  (value for the Metallicity for the model ([Fe/H]).)
+    # afe = 0  (value for alpha elements over iron abundance, where the alpha-elements considered are O, Ne, Mg, Si, S, Ca and Ti.)
+    #
+    # column 1: WAVELENGTH (ANGSTROM), Wavelength in Angstrom
+    # column 2: FLUX (ERG/CM2/S/A), Flux in erg/cm2/s/A
 
     # Regexes for reading metadata from bt-settl ascii files
     _PARAM_RE = \
@@ -409,9 +420,8 @@ class BtSettlGrid(StellarGrid):
     _LAMBDA_UNIT_RE = _re.compile(r"Wavelength in (?P<unit>[\w\/]*)$", _re.MULTILINE)
     _FLUX_UNIT_RE = _re.compile(r"Flux in (?P<unit>[\w\/]*)$", _re.MULTILINE)
 
-
     def __init__(self,
-                 data_file: _Path=_DEF_MODEL_FILE,
+                 data_file: _Path,
                  extinction_model: _BaseExtModel=None,
                  verbose: bool=False):
         """
@@ -423,40 +433,38 @@ class BtSettlGrid(StellarGrid):
         :verbose: whether or not to output verbose status messages
         """
         with _np.load(data_file, allow_pickle=True) as df:
-            model_grid_full = df["grid_full"]
+            model_grid = df["model_grid"]
             meta = df["meta"].item()
-            teffs = meta["teffs"]
-            loggs = meta["loggs"]
-            metals = meta["metals"]
-            wavelengths = meta["wavelengths"]
-
-        # The spline methods require k+1 options across all dimensions.
-        super().__init__(model_grid=model_grid_full,
-                         teffs=teffs,
-                         loggs=loggs,
-                         metals=metals,
-                         wavelengths=wavelengths,
-                         extinction_model=extinction_model,
-                         interp_method="slinear" if min(model_grid_full.shape) > 1 else "linear",
-                         verbose=verbose)
+            if verbose and "created" in meta:
+                print(f"Loading model grid from {data_file.name} created at {meta['created']}")
+            super().__init__(model_grid=model_grid,
+                             teffs=meta["teffs"],
+                             loggs=meta["loggs"],
+                             metals=meta["metals"],
+                             wavelengths=meta["wavelengths"],
+                             extinction_model=extinction_model,
+                             # The spline methods require k+1 options across all dimensions.
+                             interp_method="slinear" if min(model_grid.shape) > 1 else "linear",
+                             verbose=verbose)
 
     @classmethod
     def make_grid_file(cls,
                        source_files: _Iterable,
-                       out_file: _Path=_DEF_MODEL_FILE):
+                       out_file: _Path,
+                       grid_nbins: int,
+                       grid_lam_range: _Tuple=(0.05, 50.)):
         """
-        Will ingest the chosen bt-settl-agss ascii grid files to produce a grid file containing
-        the grids of fluxes and associated metadata to act as a source for instances of this class.
+        Will ingest the chosen ascii grid files, previously downloaded from the SVO Theoretical
+        Spectra service, to produce a grid file containing the grids of fluxes and associated
+        metadata to act as a source for instances of this class.
 
-        Download bt-settl-aggs ascii model grids from following url
-        https://svo2.cab.inta-csic.es/theory/newov2/index.php?models=bt-settl-agss
-        
-        :source_files: an iterator/list of the source bt-settle ascii files to read
+        :source_files: an iterator/list of the source SVO format ascii files to read
         :out_file: the model file to write (overwriting any existing file)
+        :grid_nbins: the number of binned fluxes to store per row
+        :grid_lam_range: wavelength range (to, from) of the grid [micron]
         """
-        grid_full_nbins = 5000
-        grid_full_bin_lams = _np.geomspace(0.05, 50, num=grid_full_nbins, endpoint=True) << _u.um
-        grid_full_bin_freqs = grid_full_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
+        grid_bin_lams = _np.geomspace(*grid_lam_range, grid_nbins, True) << StellarGrid._LAM_UNIT
+        grid_bin_freqs = grid_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
         index_names = ["teff", "logg", "metal", "alpha"]
 
         # Need the files in sorted list as we go through them twice and the order may set indices.
@@ -477,65 +485,57 @@ class BtSettlGrid(StellarGrid):
         metals = _np.unique(index_vals["metal"])
         folded_index_shape = (len(teffs), len(loggs), len(metals))
         index_vals = index_vals.reshape(folded_index_shape)
-        grid_full = _np.full(folded_index_shape + (grid_full_nbins, ), _np.nan, _np.float32)
+        model_grid = _np.full(folded_index_shape + (grid_nbins, ), _np.nan, dtype=_np.float32)
 
-        # Read in each source file, parse it, calculate the bin fluxes then store a row in the grid
         for file_ix, source_file in enumerate(source_files):
             meta = cls._read_metadata_from_ascii_model_file(source_file)
             print(f"{file_ix+1}/{len(source_files)} {source_file.name}", end="...", flush=True)
-
             if meta["alpha"] != 0:
                 print(f"skipped row as alpha != 0 ({meta['alpha']})")
             else:
-                lams, flux_densities = _np.genfromtxt(source_file, float, comments="#", unpack=True)
+                lams, flux_dens = _np.genfromtxt(source_file, _np.float32, "#", unpack=True)
                 lams = (lams * meta["lambda_unit"]).to(cls._LAM_UNIT, equivalencies=_u.spectral())
-                flux_densities = (flux_densities * meta["flux_unit"])\
+                flux_dens = (flux_dens * meta["flux_unit"])\
                                 .to(cls._FLUX_DENSITY_UNIT, equivalencies=_u.spectral_density(lams))
 
                 print(f"[{len(lams):,d} rows]:",
                       ", ".join(f"{k}={meta[k]: .2f}" for k in index_names), end="...", flush=True)
 
                 # Write the row of binned fluxes to the full grid.
-                bin_flux_densities = cls._bin_fluxes(lams, flux_densities, grid_full_bin_lams)
+                bin_flux_dens = cls._bin_fluxes(lams, flux_dens, grid_bin_lams)
                 tix = _np.where(teffs == meta["teff"])
                 lix = _np.where(loggs == meta["logg"])
                 mix = _np.where(metals == meta["metal"])
-                grid_full[tix, lix, mix] = (bin_flux_densities * grid_full_bin_freqs).value
-
-                print(f"added row of {grid_full_nbins} binned fluxes")
+                model_grid[tix, lix, mix] = (bin_flux_dens * grid_bin_freqs).value
+                print(f"added row of {grid_nbins} binned fluxes")
 
         # Interpolate any gaps in the grid. We can't interpolate on dimensions with only one choice.
         print("Interpolating missing values", end="...", flush=True)
         index_dim_multi = _np.array([d for d, size in enumerate(index_vals.shape) if size > 1])
         neighbours = 4**index_vals.ndim # limit RBF mem usage; otherwise scales as ~points^2
-        for wix in range(grid_full_nbins):
+        for wix in range(grid_nbins):
             if wix % 100 == 0 and wix > 0: print(".", end="", flush=True)
-            nans = _np.isnan(grid_full[:, :, :, wix])    # This lam across all other dims
+            nans = _np.isnan(model_grid[:, :, :, wix])    # This lam across all other dims
             if _np.all(nans):
                 raise ValueError("Ooops! Nothing to interp from")
             if _np.any(nans):
                 # Awkward; each index is a tuple of vals & we can't mask or use index lists on them.
                 # Get pts into 2-d array of shape (npoints, ndims) skipping axes with single choice.
                 pts = _np.array([[ix[d] for d in index_dim_multi] for ix in index_vals[~nans]])
-                vals = grid_full[~nans, wix]
+                vals = model_grid[~nans, wix]
                 int_pts = _np.array([[ix[d] for d in index_dim_multi] for ix in index_vals[nans]])
                 int_vals = _RBFInterpolator(pts, vals, neighbours, 5, "thin_plate_spline")(int_pts)
-                grid_full[nans, wix] = _np.maximum(int_vals, 0.0)
+                model_grid[nans, wix] = _np.maximum(int_vals, 0.0)
         print("done.")
 
         # Complete the metadata; row indices and col indices (filters & wavelengths)
-        grid_meta = {
-            "teffs": teffs,
-            "loggs": loggs,
-            "metals": metals,
-            "wavelengths": grid_full_bin_lams.value
-        }
+        grid_meta = { "teffs": teffs, "loggs": loggs, "metals": metals,
+                      "wavelengths": grid_bin_lams.value, "created": _datetime.now(_timezone.utc) }
 
         # Now we write out the model grids and metadata to a compressed npz file
         print(f"Saving model grids and metadata to {out_file}, overwriting any existing file.")
         out_file.parent.mkdir(parents=True, exist_ok=True)
-        _np.savez_compressed(out_file, meta=grid_meta, grid_full=grid_full)
-        return out_file
+        _np.savez_compressed(out_file, model_grid=model_grid, meta=grid_meta)
 
     @classmethod
     def _read_metadata_from_ascii_model_file(cls, source_file: _Path) -> dict[str, any]:
@@ -559,14 +559,10 @@ class BtSettlGrid(StellarGrid):
         return metadata
 
     @classmethod
-    def _get_list_of_index_values(cls, source_files: _ArrayLike, index_names: _List[str],
-                                  dense: bool=False) -> _np.ndarray[float]:
+    def _get_list_of_index_values(cls, source_files: _ArrayLike,
+                                  index_names: _List[str], dense: bool=False) -> _np.ndarray[float]:
         """
         Gets a sorted structured NDArray of the index values across the source files.
-
-        :source_files: the list of files to parse
-        :index_names: the values to read from the files and to index on
-        :dense: if True, the resulting list will be the Cartesian product of the unique values
         """
         if dense:
             index_lists = { }
@@ -586,3 +582,19 @@ class BtSettlGrid(StellarGrid):
                 if all(n in metadata.keys() for n in index_names):
                     index_list += [tuple(metadata[k] for k in index_names)]
         return _np.array(sorted(index_list), dtype=[(k, float) for k in index_names])
+
+
+class BtSettlGrid(SvoStellarGrid):
+    """
+    Generates model SED fluxes from pre-built grids of bt-settl-agss model fluxes.
+    """
+    _DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/bt-settl-agss/bt-settl-agss.npz"
+
+    def __init__(self, data_file: _Path=_DEF_DATA_FILE,
+                 extinction_model: _BaseExtModel=None, verbose: bool=False):
+        super().__init__(data_file, extinction_model, verbose)
+
+    @classmethod
+    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE,
+                       grid_nbins: int=5000, grid_lam_range: _Tuple=(0.05, 50.)):
+        SvoStellarGrid.make_grid_file(source_files, out_file, grid_nbins, grid_lam_range)
