@@ -428,15 +428,15 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         Initializes a new instance of this class.
 
         :data_file: the source of the model data, in numpy npz format
-        :filter_map_file: json file containing mappings from VizieR to SVO filter names
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
         :verbose: whether or not to output verbose status messages
         """
         with _np.load(data_file, allow_pickle=True) as df:
             model_grid = df["model_grid"]
             meta = df["meta"].item()
-            if verbose and "created" in meta:
-                print(f"Loading model grid from {data_file.name} created at {meta['created']}")
+            if verbose:
+                created = meta.get("created", "unknown")
+                print(f"Loading model grid from {data_file.name} created at {created}")
             super().__init__(model_grid=model_grid,
                              teffs=meta["teffs"],
                              loggs=meta["loggs"],
@@ -451,32 +451,43 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
     def make_grid_file(cls,
                        source_files: _Iterable,
                        out_file: _Path,
-                       grid_nbins: int,
-                       grid_lam_range: _Tuple=(0.05, 50.)):
+                       grid_nbins: int=None,
+                       grid_lam_range: _Tuple=None):
         """
         Will ingest the chosen ascii grid files, previously downloaded from the SVO Theoretical
         Spectra service, to produce a grid file containing the grids of fluxes and associated
         metadata to act as a source for instances of this class.
 
+        Either both grid_nbins and grid_lam_range are expected to have values, in which case they
+        are used to define the wavelength bins into which fluxes are re-binned, or both should
+        be None, in which case the wavelength bins & fluxes in the source files are used as is
+        (provided they are consistent across all of the files). 
+
         :source_files: an iterator/list of the source SVO format ascii files to read
         :out_file: the model file to write (overwriting any existing file)
-        :grid_nbins: the number of binned fluxes to store per row
-        :grid_lam_range: wavelength range (to, from) of the grid [micron]
+        :grid_nbins: the number of binned fluxes to store per row, or None for no re-binning
+        :grid_lam_range: wavelength range (to, from) of the grid [micron], or None for no re-binning
         """
-        grid_bin_lams = _np.geomspace(*grid_lam_range, grid_nbins, True) << StellarGrid._LAM_UNIT
-        grid_bin_freqs = grid_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
-        index_names = ["teff", "logg", "metal", "alpha"]
-
-        # Need the files in sorted list as we go through them twice and the order may set indices.
+        # Need the files in sorted list as we go through more than once & the order may set indices.
         source_files = sorted(source_files)
-        print(f"{cls.__name__}.make_grid_file(): importing {len(source_files)} bt-settl-agss ascii",
-              f"grid files into a new compressed model file written to:\n\t{out_file}\n")
+        print(f"{cls.__name__}.make_grid_file(): importing {len(source_files)} SVO ascii",
+              f"grid files into a compressed model file to be written to:\n\t{out_file}\n")
 
-        # For now restrict our working to alpha == zero
+        # For now restrict our working to alpha/afe == zero
+        index_names = ["teff", "logg", "metal"]
         index_vals = cls._get_list_of_index_values(source_files, index_names, True)
-        index_names = index_names[:-1]
-        alpha_zero_mask = index_vals["alpha"] == 0
-        index_vals = index_vals[alpha_zero_mask][index_names]
+
+        # We will either re-bin the fluxes at wavelengths defined by #bins and range, or we directly
+        # use the fluxes at wavelengths common to all of the source files (if both args None).
+        do_bin_fluxes = grid_nbins is not None and grid_lam_range is not None
+        if do_bin_fluxes:
+            print(f"Will bin the fluxes in {grid_nbins} bins over {grid_lam_range} {cls._LAM_UNIT}")
+            grid_bin_lams = _np.geomspace(*grid_lam_range, grid_nbins, True) << cls._LAM_UNIT
+        else:
+            print("Binning not requested so will use the published fluxes directly")
+            grid_bin_lams = cls._get_common_wavelengths(source_files, cls._LAM_UNIT)
+            grid_nbins = len(grid_bin_lams)
+        grid_bin_freqs = grid_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
 
         # Now set up the multi-D index array and the target bin fluxes grid which we will populate
         # We can't rely on sorting the files for the correct order as + & - switched for metals.
@@ -490,7 +501,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         for file_ix, source_file in enumerate(source_files):
             meta = cls._read_metadata_from_ascii_model_file(source_file)
             print(f"{file_ix+1}/{len(source_files)} {source_file.name}", end="...", flush=True)
-            if meta["alpha"] != 0:
+            if meta.get("alpha", 0) != 0 or meta.get("afe", 0) != 0:
                 print(f"skipped row as alpha != 0 ({meta['alpha']})")
             else:
                 lams, flux_dens = _np.genfromtxt(source_file, _np.float32, "#", unpack=True)
@@ -501,13 +512,17 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 print(f"[{len(lams):,d} rows]:",
                       ", ".join(f"{k}={meta[k]: .2f}" for k in index_names), end="...", flush=True)
 
-                # Write the row of binned fluxes to the full grid.
-                bin_flux_dens = cls._bin_fluxes(lams, flux_dens, grid_bin_lams)
+                # Write the row of fluxes to the full grid.
                 tix = _np.where(teffs == meta["teff"])
                 lix = _np.where(loggs == meta["logg"])
                 mix = _np.where(metals == meta["metal"])
-                model_grid[tix, lix, mix] = (bin_flux_dens * grid_bin_freqs).value
-                print(f"added row of {grid_nbins} binned fluxes")
+                if do_bin_fluxes:
+                    bin_flux_dens = cls._bin_fluxes(lams, flux_dens, grid_bin_lams)
+                    model_grid[tix, lix, mix] = (bin_flux_dens * grid_bin_freqs).value
+                else:
+                    wix = _np.where(_np.in1d(lams, grid_bin_lams, assume_unique=True))
+                    model_grid[tix, lix, mix] = (flux_dens[wix] * grid_bin_freqs).value
+                print(f"added row of {grid_nbins} fluxes")
 
         # Interpolate any gaps in the grid. We can't interpolate on dimensions with only one choice.
         print("Interpolating missing values", end="...", flush=True)
@@ -517,7 +532,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             if wix % 100 == 0 and wix > 0: print(".", end="", flush=True)
             nans = _np.isnan(model_grid[:, :, :, wix])    # This lam across all other dims
             if _np.all(nans):
-                raise ValueError("Ooops! Nothing to interp from")
+                raise ValueError(f"Ooops! Nothing to interp @ lambda {grid_bin_lams[wix]}")
             if _np.any(nans):
                 # Awkward; each index is a tuple of vals & we can't mask or use index lists on them.
                 # Get pts into 2-d array of shape (npoints, ndims) skipping axes with single choice.
@@ -561,9 +576,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
     @classmethod
     def _get_list_of_index_values(cls, source_files: _ArrayLike,
                                   index_names: _List[str], dense: bool=False) -> _np.ndarray[float]:
-        """
-        Gets a sorted structured NDArray of the index values across the source files.
-        """
+        """ Gets a sorted structured NDArray of the index values across the source files. """
         if dense:
             index_lists = { }
             for source_file in source_files:
@@ -583,12 +596,22 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                     index_list += [tuple(metadata[k] for k in index_names)]
         return _np.array(sorted(index_list), dtype=[(k, float) for k in index_names])
 
+    @classmethod
+    def _get_common_wavelengths(cls, source_files: _ArrayLike, unit: _u.um) -> _u.Quantity:
+        """ Parse the source files & report the common set of wavelength values present in all. """
+        ret_lams, source_lam_unit = None, None
+        for source_file in source_files:
+            if source_lam_unit is None:
+                meta = cls._read_metadata_from_ascii_model_file(source_file)
+                source_lam_unit = meta["lambda_unit"]
+            lams, _ = _np.genfromtxt(source_file, _np.float32, "#", unpack=True)
+            ret_lams = lams if ret_lams is None else _np.intersect1d(ret_lams, lams)
+        return (ret_lams * source_lam_unit).to(unit, equivalencies=_u.spectral())
+
 
 class BtSettlGrid(SvoStellarGrid):
-    """
-    Generates model SED fluxes from pre-built grids of bt-settl-agss model fluxes.
-    """
-    _DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/bt-settl-agss/bt-settl-agss.npz"
+    """ Generates model SED fluxes from pre-built grid of bt-settl-agss model fluxes. """
+    _DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/bt-settl/bt-settl-agss.npz"
 
     def __init__(self, data_file: _Path=_DEF_DATA_FILE,
                  extinction_model: _BaseExtModel=None, verbose: bool=False):
@@ -598,3 +621,17 @@ class BtSettlGrid(SvoStellarGrid):
     def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE,
                        grid_nbins: int=5000, grid_lam_range: _Tuple=(0.05, 50.)):
         SvoStellarGrid.make_grid_file(source_files, out_file, grid_nbins, grid_lam_range)
+
+
+class KuruczGrid(SvoStellarGrid):
+    """ Generates model SED fluxes from pre-built grid of Kurucz ODFNEW /NOVER fluxes. """
+    _DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/kurucz/kurucz-odfnew-nover.npz"
+
+    def __init__(self, data_file: _Path=_DEF_DATA_FILE,
+                 extinction_model: _BaseExtModel=None, verbose: bool=False):
+        super().__init__(data_file, extinction_model, verbose)
+
+    @classmethod
+    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE):
+        # pylint: disable=arguments-differ
+        SvoStellarGrid.make_grid_file(source_files, out_file, None, None)

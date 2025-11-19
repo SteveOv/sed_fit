@@ -1,7 +1,7 @@
 """ A module for creating the shipped StellarGrid data files for the sed_fit package. """
 # pylint: disable=protected-access
 from pathlib import Path
-from sed_fit.stellar_grids import StellarGrid, BtSettlGrid
+from sed_fit.stellar_grids import StellarGrid, BtSettlGrid, KuruczGrid
 
 def quick_test_stellar_grid_lookup(sgrid: StellarGrid) -> Path:
     """
@@ -23,15 +23,36 @@ def quick_test_stellar_grid_lookup(sgrid: StellarGrid) -> Path:
           f"[{sgrid.flux_unit:unicode}]")
 
 if __name__ == "__main__":
+    #
+    # BtSettl AGSS Grid
+    #
     # Download bt-settl-aggs ascii model grids from following url
     # https://svo2.cab.inta-csic.es/theory/newov2/index.php?models=bt-settl-agss
     # To create default data file;
     # - show all results for teff 2000 to 40000, logg 3.5 to 5.5 and metal -0.5 to 0.5.
     # - mark all ascii, click retrieve files (wait to assemble into archive file) then download
-    # - decompress the archive contents into the ../.cache/.modelgrids/bt-settl-agss dir
+    # - decompress the archive contents into the ../.cache/.modelgrids/bt-settl-agss/ dir
+    print()
     in_files = sorted((Path.cwd() / ".cache/.modelgrids/bt-settl-agss/").glob("lte*.dat.txt"))
-    data_file = Path("./sed_fit/data/stellar_grids/bt-settl-agss/bt-settl-agss.npz")
+    data_file = BtSettlGrid._DEF_DATA_FILE
 
     BtSettlGrid.make_grid_file(in_files, data_file)
 
     quick_test_stellar_grid_lookup(BtSettlGrid(data_file, verbose=True))
+
+    #
+    # Kurucz Grid
+    #
+    # Download Kurucz ODFNEW /NOVER ascii model grids from following url
+    # https://svo2.cab.inta-csic.es/theory/newov2/index.php?models=Kurucz2003all
+    # To create default data file;
+    # - show all results for teff 3500 to 30000, logg 3.0 to 5.0, metal -0.5 to 0.5 & alpha == 0.
+    # - mark all ascii, click retrieve files (wait to assemble into archive file) then download
+    # - decompress the archive contents into the ../.cache/.modelgrids/kurucz-odfnew-nover/ dir
+    print()
+    in_files = sorted((Path.cwd() / ".cache/.modelgrids/kurucz-odfnew-nover/").glob("*.fl.dat.txt"))
+    data_file = KuruczGrid._DEF_DATA_FILE
+
+    KuruczGrid.make_grid_file(in_files, data_file)
+
+    quick_test_stellar_grid_lookup(KuruczGrid(data_file, verbose=True))
