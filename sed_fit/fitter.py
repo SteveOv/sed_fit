@@ -273,37 +273,36 @@ def mcmc_fit(x: _np.ndarray[float],
         step = 0
         for _ in sampler.sample(initial_state=p0, iterations=nsteps // thin_by,
                                 thin_by=thin_by, tune=True, progress=progress):
-            if early_stopping:
-                step = sampler.iteration * thin_by
-                if step > min_steps_es and step % 1000 == 0:
-                    # The autocor time (tau) is the steps to effectively forget start position.
-                    # As the fit converges the change in tau will tend towards zero. We set tol=0
-                    # to prevent chain-too-short warning while we're expliciting testing the fit.
-                    prev_tau = tau
-                    tau = sampler.get_autocorr_time(c=5, tol=0, quiet=True) * thin_by
-                    if not any(_np.isnan(tau)) \
-                            and all(tau < step / 100) \
-                            and all(abs(prev_tau - tau) / prev_tau < 0.01):
-                        break
+            step = sampler.iteration * thin_by
+            if early_stopping and step > min_steps_es and step % 1000 == 0:
+                # The autocor time (tau) is the steps to effectively forget start position.
+                # As the fit converges the change in tau will tend towards zero. We set tol=0
+                # to prevent chain-too-short warning while we're expliciting testing the fit.
+                prev_tau = tau
+                tau = sampler.get_autocorr_time(c=5, tol=0, quiet=True) * thin_by
+                if not any(_np.isnan(tau)) \
+                        and all(tau < step / 100) \
+                        and all(abs(prev_tau - tau) / prev_tau < 0.01):
+                    break
 
         if early_stopping and 0 < step < nsteps:
             print(f"Halting MCMC after {step:d} steps as the walkers are past",
                   "100 times the autocorrelation time & the fit has converged.")
 
         tau = sampler.get_autocorr_time(c=5, tol=autocor_tol, quiet=True) * thin_by
-        burn_in_steps = int(max(_np.nan_to_num(tau, copy=True, nan=1000)) * 2)
+        burn_in_steps = int(max(_np.nan_to_num(tau, copy=True, nan=step/10)) * 2)
         samples = sampler.get_chain(discard=burn_in_steps, flat=True)
 
         # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
         theta_fit = _uarray(theta0, 0)
-        fit_nom = _np.median(samples[burn_in_steps:], axis=0)
-        fit_err_high = _np.quantile(samples[burn_in_steps:], 0.84, axis=0) - fit_nom
-        fit_err_low = fit_nom - _np.quantile(samples[burn_in_steps:], 0.16, axis=0)
+        fit_nom = _np.median(samples, axis=0)
+        fit_err_high = _np.quantile(samples, 0.84, axis=0) - fit_nom
+        fit_err_low = fit_nom - _np.quantile(samples, 0.16, axis=0)
         theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([fit_err_high, fit_err_low], axis=0))
 
     if verbose:
         print( "Autocorrelation steps (tau):", ", ".join(f"{t:.3f}" for t in tau))
-        print(f"Estimated burn-in steps:     {int(max(_np.nan_to_num(tau, nan=1000)) * 2):,}")
+        print(f"Estimated burn-in steps:     {burn_in_steps:,}")
         print(f"Mean Acceptance fraction:    {_np.mean(sampler.acceptance_fraction):.3f}")
         _print_theta(theta_fit, fit_mask, "The MCMC fit yielded theta:  ")
 
