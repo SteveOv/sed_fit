@@ -1,5 +1,5 @@
 """ A module for fitting stellar model fluxes for multiple stars to stellar SEDs """
-from typing import Tuple, List, Callable, Union, Generator
+from typing import Tuple, List, Callable, Union
 from numbers import Number
 from math import floor as _floor
 
