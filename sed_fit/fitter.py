@@ -264,7 +264,7 @@ def mcmc_fit(x: _np.ndarray[float],
         _ln_prior_func, _stellar_grid = ln_prior_func, stellar_grid
 
         # Min steps required by Autocorr algo to avoid a warn msg (not a warning so can't filter)
-        min_steps_before_es = int(50 * autocor_tol)
+        min_steps_before_es = int(50 * ndim * autocor_tol)
 
         if verbose:
             print("Running MCMC fit on", f"{processes}" if processes else f"up to {_cpu_count()}",
