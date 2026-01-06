@@ -140,10 +140,10 @@ if __name__ == "__main__":
     # For now, hard coded to 2 stars. Same order as theta: teff, radii (, logg, dist are not fitted)
     teff_limits = model_grid.teff_range
     radius_limits = (0.1, 100)
-    dist_limits = (target_data["distance_pc"] * 0.95, target_data["distance_pc"] * 1.05)
+    dist_limits = (target_data["distance_pc"] * 0.9, target_data["distance_pc"] * 1.1)
     av_limits = (0, 0.9)
-    teff_ratio = (target_data["teff_ratio"].n, max(target_data["teff_ratio"].n * 0.05, target_data["teff_ratio"].s))
-    radius_ratio = (target_data["k"].n, max(target_data["k"].n * 0.05, target_data["k"].s))
+    teff_ratio = (target_data["teff_ratio"].n, max(target_data["teff_ratio"].n * 0.1, target_data["teff_ratio"].s))
+    radius_ratio = (target_data["k"].n, max(target_data["k"].n * 0.1, target_data["k"].s))
 
     def ln_prior_func(theta: np.ndarray[float]) -> float:
         """
