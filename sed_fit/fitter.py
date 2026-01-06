@@ -243,7 +243,7 @@ def mcmc_fit(x: _np.ndarray[float],
     rng = _np.random.default_rng(seed)
     theta_fit = theta0[fit_mask]
     ndim = len(theta_fit)
-    autocor_tol = 50 / thin_by
+    autocor_tol = 50
     tau = [_np.inf] * ndim
 
     # Starting positions for the walkers clustered around theta0
@@ -264,17 +264,21 @@ def mcmc_fit(x: _np.ndarray[float],
         _ln_prior_func, _stellar_grid = ln_prior_func, stellar_grid
 
         # Min steps required by Autocorr algo to avoid a warn msg (not a warning so can't filter)
-        min_steps_es = int(50 * autocor_tol * thin_by)
+        min_steps_before_es = int(50 * autocor_tol)
 
-        print(f"Running MCMC fit with {nwalkers:d} walkers for {nsteps:d} steps, thinned by",
-            f"{thin_by}, on {processes}" if processes else f"up to {_cpu_count()}", "process(es).",
-            f"Early stopping is enabled after {min_steps_es:d} steps." if early_stopping else "")
+        if verbose:
+            print("Running MCMC fit on", f"{processes}" if processes else f"up to {_cpu_count()}",
+                f"process(es) with {nwalkers:d} walkers for {nsteps:d}",
+                f"steps, sampling every {thin_by:d} steps." if thin_by > 1 else "steps.")
+            if early_stopping:
+                print(f"Early stopping is enabled after {min_steps_before_es:d} steps.")
+
         sampler = EnsembleSampler(int(nwalkers), ndim, _objective_func, pool=pool)
         step = 0
         for _ in sampler.sample(initial_state=p0, iterations=nsteps // thin_by,
                                 thin_by=thin_by, tune=True, progress=progress):
             step = sampler.iteration * thin_by
-            if early_stopping and step > min_steps_es and step % 1000 == 0:
+            if early_stopping and step > min_steps_before_es and step % 1000 == 0:
                 # The autocor time (tau) is the steps to effectively forget start position.
                 # As the fit converges the change in tau will tend towards zero. We set tol=0
                 # to prevent chain-too-short warning while we're expliciting testing the fit.
@@ -285,28 +289,54 @@ def mcmc_fit(x: _np.ndarray[float],
                         and all(abs(prev_tau - tau) / prev_tau < 0.01):
                     break
 
-        if early_stopping and 0 < step < nsteps:
+        if verbose and early_stopping and 0 < step < nsteps:
             print(f"Halting MCMC after {step:d} steps as the walkers are past",
                   "100 times the autocorrelation time & the fit has converged.")
 
-        tau = sampler.get_autocorr_time(c=5, tol=autocor_tol, quiet=True) * thin_by
-        burn_in_steps = int(max(_np.nan_to_num(tau, copy=True, nan=step/10)) * 2)
-        samples = sampler.get_chain(discard=burn_in_steps, flat=True)
-
-        # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
-        theta_fit = _uarray(theta0, 0)
-        fit_nom = _np.median(samples, axis=0)
-        fit_err_high = _np.quantile(samples, 0.84, axis=0) - fit_nom
-        fit_err_low = fit_nom - _np.quantile(samples, 0.16, axis=0)
-        theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([fit_err_high, fit_err_low], axis=0))
+    # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
+    samples = samples_from_sampler(sampler, autocor_tol, thin_by, flat=True, verbose=verbose)
+    fit_nom = _np.median(samples, axis=0)
+    fit_err_high = _np.quantile(samples, 0.84, axis=0) - fit_nom
+    fit_err_low = fit_nom - _np.quantile(samples, 0.16, axis=0)
+    theta_fit = _uarray(theta0, 0)
+    theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([fit_err_high, fit_err_low], axis=0))
 
     if verbose:
-        print( "Autocorrelation steps (tau):", ", ".join(f"{t:.3f}" for t in tau))
-        print(f"Estimated burn-in steps:     {burn_in_steps:,}")
-        print(f"Mean Acceptance fraction:    {_np.mean(sampler.acceptance_fraction):.3f}")
         _print_theta(theta_fit, fit_mask, "The MCMC fit yielded theta:  ")
 
     return theta_fit, sampler
+
+
+def samples_from_sampler(sampler: EnsembleSampler,
+                         autocor_tol: int=50,
+                         thin_by: int=1,
+                         flat: bool=False,
+                         verbose: bool=False) -> _np.ndarray:
+    """
+    Gets the chain of samples from the passed sampler after calculating and discarding the
+    estimated burn-in.
+    
+    :sampler: the completed sampler to inspect
+    :autocor_tol: the autocorrelation tolerance
+    :thin_by: step interval that was used to inspect the fit's progress and yield samples
+    :flat: whether or not to return flattened samples
+    :verbose: whether or not to write acceptance, sample and burn-in information to stdout
+    :returns: the post burn-in samples
+    """
+    tau_iters = sampler.get_autocorr_time(c=5, tol=autocor_tol, thin=thin_by, quiet=True)
+    def_tau = sampler.iteration / 10
+    burn_in_iters = int(_np.ceil(max(_np.nan_to_num(tau_iters, copy=True, nan=def_tau)) * 2))
+
+    # The chain consists of the samples at each iteration (equivalent to each thin_by step)
+    samples = sampler.get_chain(discard=burn_in_iters, flat=flat)
+
+    if verbose:
+        print(f"Mean Acceptance fraction:    {_np.mean(sampler.acceptance_fraction):.3f}")
+        print( "Autocorrelation steps (tau):", ", ".join(f"{t:.3f}" for t in tau_iters * thin_by))
+        print(f"Estimated burn-in steps:     {burn_in_iters * thin_by:,}")
+        print(f"Leaving samples of shape:    {samples.shape}", "*flattened" if flat else "")
+
+    return samples
 
 
 def create_theta(teffs: Union[List[float], float],
