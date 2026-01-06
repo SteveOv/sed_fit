@@ -14,6 +14,7 @@ from scipy.optimize import minimize as _minimize
 from scipy.optimize import OptimizeResult, OptimizeWarning
 
 from emcee import EnsembleSampler
+from emcee.autocorr import AutocorrError
 
 import astropy.units as _u
 from astropy.constants import iau2015 as _iau2015
@@ -278,16 +279,19 @@ def mcmc_fit(x: _np.ndarray[float],
         for _ in sampler.sample(initial_state=p0, iterations=nsteps // thin_by,
                                 thin_by=thin_by, tune=True, progress=progress):
             step = sampler.iteration * thin_by
-            if early_stopping and step > min_steps_before_es and step % 1000 == 0:
-                # The autocor time (tau) is the steps to effectively forget start position.
-                # As the fit converges the change in tau will tend towards zero. We set tol=0
-                # to prevent chain-too-short warning while we're expliciting testing the fit.
-                prev_tau = tau
-                tau = sampler.get_autocorr_time(c=5, tol=0, quiet=True) * thin_by
-                if not any(_np.isnan(tau)) \
-                        and all(tau < step / 100) \
-                        and all(abs(prev_tau - tau) / prev_tau < 0.01):
-                    break
+            if early_stopping and step >= min_steps_before_es and step % 1000 == 0:
+                try:
+                    # The autocor time (tau) is the #steps to effectively forget start position.
+                    # As the fit converges the change in tau will tend towards zero.
+                    prev_tau, tau = tau, sampler.get_autocorr_time(c=5, tol=autocor_tol) * thin_by
+                    if not any(_np.isnan(tau)) \
+                            and all(tau < step / 100) \
+                            and all(abs(prev_tau - tau) / prev_tau < 0.01):
+                        break
+                except AutocorrError:
+                    # The chain is too short. Can set the quiet arg to True in which case a warning
+                    # message is output (but not a Python warning). Cleaner to consume the error.
+                    pass
 
         if verbose and early_stopping and 0 < step < nsteps:
             print(f"Halting MCMC after {step:d} steps as the walkers are past",
@@ -323,9 +327,9 @@ def samples_from_sampler(sampler: EnsembleSampler,
     :verbose: whether or not to write acceptance, sample and burn-in information to stdout
     :returns: the post burn-in samples
     """
-    tau_iters = sampler.get_autocorr_time(c=5, tol=autocor_tol, thin=thin_by, quiet=True)
-    def_tau = sampler.iteration / 10
-    burn_in_iters = int(_np.ceil(max(_np.nan_to_num(tau_iters, copy=True, nan=def_tau)) * 2))
+    tau_iters = sampler.get_autocorr_time(c=5, tol=autocor_tol, quiet=True)
+    def_tau_iter = sampler.iteration / 10
+    burn_in_iters = int(_np.ceil(max(_np.nan_to_num(tau_iters, copy=True, nan=def_tau_iter)) * 2))
 
     # The chain consists of the samples at each iteration (equivalent to each thin_by step)
     samples = sampler.get_chain(discard=burn_in_iters, flat=flat)
