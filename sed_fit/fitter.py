@@ -212,6 +212,7 @@ def mcmc_fit(x: _np.ndarray[float],
              thin_by: int=10,
              seed: int=42,
              processes: int=1,
+             autocor_tol: int=50,
              early_stopping: bool=True,
              progress: Union[bool, str]=False,
              verbose: bool=False) -> Tuple[_np.ndarray[_UFloat], EnsembleSampler]:
@@ -234,6 +235,7 @@ def mcmc_fit(x: _np.ndarray[float],
     :thin_by: step interval to inspect fit progress
     :seed: optional seed for random behaviour
     :processes: optional number of parallel processes to use, or None to let code choose
+    :autocor_tol: the autocorrelation tolerance
     :early_stopping: stop fitting if solution has converged & further improvements are negligible
     :progress: whether to show a progress bar (see emcee documentation for other values)
     :returns: fitted set of parameters as UFloats and an EnsembleSampler with details of the outcome
@@ -244,7 +246,6 @@ def mcmc_fit(x: _np.ndarray[float],
     rng = _np.random.default_rng(seed)
     theta_fit = theta0[fit_mask]
     ndim = len(theta_fit)
-    autocor_tol = 50
     tau = [_np.inf] * ndim
 
     # Starting positions for the walkers clustered around theta0
