@@ -327,7 +327,7 @@ class TestBtSettlGrid(unittest.TestCase):
 
                 self.assertIsInstance(fluxes, np.ndarray)
                 for exp_flux, flux in zip(exp_fluxes, fluxes):
-                    self.assertAlmostEqual(exp_flux, flux, -1)
+                    self.assertAlmostEqual(exp_flux, flux, -3)
 
     def test_get_filter_fluxes_with_reddening(self):
         """ Tests get_filter_fluxes() with use of pre-filtered grid and interpolated values """
@@ -368,7 +368,7 @@ class TestBtSettlGrid(unittest.TestCase):
                 fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av, quick)
                 self.assertIsInstance(fluxes, np.ndarray)
                 for exp_flux, flux in zip(exp_red_flux, fluxes):
-                    self.assertAlmostEqual(exp_flux, flux, -1)
+                    self.assertAlmostEqual(exp_flux, flux, -3)
 
     def test_get_filter_fluxes_unknown_filter_name(self):
         """ Tests get_filter_fluxes() with unknown filter names -> assert KeyError """

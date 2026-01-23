@@ -10,6 +10,7 @@ from json import load as _json_load
 from urllib.parse import quote_plus as _quote_plus
 from itertools import product as _product
 from datetime import datetime as _datetime, timezone as _timezone
+from functools import lru_cache as _lru_cache
 
 import numpy as _np
 from numpy.typing import ArrayLike as _ArrayLike
@@ -635,3 +636,36 @@ class KuruczGrid(SvoStellarGrid):
     def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE):
         # pylint: disable=arguments-differ
         SvoStellarGrid.make_grid_file(source_files, out_file, None, None)
+
+
+@_lru_cache
+def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarGrid:
+    """
+    A factory method for creating StellarGrid subclass instances with the benefit of caching.
+
+    :grid: the type of StellarGrid to get
+    :kwargs: the arguments with which to initialize the grid (specific to the type of grid)
+    :returns: the resulting instance
+    """
+    grid_class = None
+    if isinstance(grid, str):
+        def get_subclasses(superclass):
+            for subclass in superclass.__subclasses__():
+                yield subclass
+                yield from get_subclasses(subclass)
+
+        possible_names = [grid.casefold(), grid.casefold() + "grid"]
+        for subclass in get_subclasses(StellarGrid):
+            if subclass.__name__.casefold() in possible_names:
+                grid_class = subclass
+                break
+    elif issubclass(grid, StellarGrid):
+        grid_class = grid
+
+    if grid_class is None:
+        raise KeyError(f"No subclass of StellarGrid like {grid} found.")
+    if _AbstractBaseClass in grid_class.__bases__:
+        # Careful with this check, as we only want to go to the immediate base class(es)
+        # or the check will always be True because StellarGrid is an abstract class.
+        raise ValueError(f"Cannot initialize the abstract class {grid_class.__name__}")
+    return grid_class(**kwargs)
