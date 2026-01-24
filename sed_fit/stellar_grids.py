@@ -638,7 +638,6 @@ class KuruczGrid(SvoStellarGrid):
         SvoStellarGrid.make_grid_file(source_files, out_file, None, None)
 
 
-@_lru_cache
 def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarGrid:
     """
     A factory method for creating StellarGrid subclass instances with the benefit of caching.
@@ -647,7 +646,7 @@ def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarG
     :kwargs: the arguments with which to initialize the grid (specific to the type of grid)
     :returns: the resulting instance
     """
-    grid_class = None
+    grid_type = None
     if isinstance(grid, str):
         def get_subclasses(superclass):
             for subclass in superclass.__subclasses__():
@@ -657,15 +656,20 @@ def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarG
         possible_names = [grid.casefold(), grid.casefold() + "grid"]
         for subclass in get_subclasses(StellarGrid):
             if subclass.__name__.casefold() in possible_names:
-                grid_class = subclass
+                grid_type = subclass
                 break
     elif issubclass(grid, StellarGrid):
-        grid_class = grid
+        grid_type = grid
 
-    if grid_class is None:
+    if grid_type is None:
         raise KeyError(f"No subclass of StellarGrid like {grid} found.")
-    if _AbstractBaseClass in grid_class.__bases__:
-        # Careful with this check, as we only want to go to the immediate base class(es)
-        # or the check will always be True because StellarGrid is an abstract class.
-        raise ValueError(f"Cannot initialize the abstract class {grid_class.__name__}")
-    return grid_class(**kwargs)
+    if _AbstractBaseClass in grid_type.__bases__:
+        # Careful with this check, as we only want to check the immediate base class(es).
+        # Avoid issubclass() as it will always be true because StellarGrid is abstract.
+        raise ValueError(f"Cannot initialize the abstract class {grid_type.__name__}")
+
+    return _init_type(grid_type, **kwargs)
+
+@_lru_cache
+def _init_type(the_type: type, **kwargs):
+    return the_type(**kwargs)
