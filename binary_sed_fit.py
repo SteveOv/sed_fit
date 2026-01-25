@@ -24,7 +24,7 @@ from deblib.stellar import log_g
 from support.pipeline import get_teff_from_spt
 from support.sed import get_sed_for_target, create_outliers_mask, group_and_average_fluxes
 
-from sed_fit.stellar_grids import BtSettlGrid
+from sed_fit.stellar_grids import get_stellar_grid
 from sed_fit import fitter
 
 if __name__ == "__main__":
@@ -95,8 +95,8 @@ if __name__ == "__main__":
     ext_model = G23(Rv=3.1)
     ext_wl_range = np.reciprocal(ext_model.x_range) * u.um # x_range has implicit units of 1/micron
 
-    # Read the pre-built bt-settl model file
-    model_grid = BtSettlGrid(extinction_model=ext_model, verbose=True)
+    # BtSettlGrid & KuruczGrid available with the former having better coverage but slower/larger
+    model_grid = get_stellar_grid("BtSettlGrid", extinction_model=ext_model, verbose=True)
 
     # Read in the SED for this target and de-duplicate (measurements may appear multiple times).
     sed = get_sed_for_target(TARGET, target_data["search_term"], radius=0.1, remove_duplicates=True)
