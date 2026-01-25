@@ -301,11 +301,9 @@ def mcmc_fit(x: _np.ndarray[float],
 
     # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
     samples = samples_from_sampler(sampler, autocor_tol, thin_by, flat=True, verbose=verbose)
-    fit_nom = _np.median(samples, axis=0)
-    fit_err_high = _np.quantile(samples, 0.84, axis=0) - fit_nom
-    fit_err_low = fit_nom - _np.quantile(samples, 0.16, axis=0)
+    fit_nom, quant_low, quant_high = median_and_quantile_values(samples, axis=0)
     theta_fit = _uarray(theta0, 0)
-    theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([fit_err_high, fit_err_low], axis=0))
+    theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([quant_low, quant_high], axis=0))
 
     if verbose:
         _print_theta(theta_fit, fit_mask, "The MCMC fit yielded theta:  ")
@@ -343,6 +341,25 @@ def samples_from_sampler(sampler: EnsembleSampler,
         print(f"Leaving samples of shape:    {samples.shape}", "*flattened" if flat else "")
 
     return samples
+
+
+def median_and_quantile_values(values: Union[_np.ndarray[float], _np.ndarray[_UFloat]],
+                               q: Tuple[float, float]=(0.16, 0.84),
+                               axis: int=0) \
+                            -> Tuple[_np.ndarray[float], _np.ndarray[float], _np.ndarray[float]] :
+    """
+    Will calculate the median and q-th lower & uppers quantile values of the passed
+    array along the chosen axis.
+
+    :values: the values to aggregate
+    :q: a tuple in the form (q-lower, q-upper) of the lower and upper probabilities to calculate
+    :axis: the axis along which the median and quantiles are computed
+    :values: a tuple of arrays for the median, lower and upper quantiles
+    """
+    median = _np.median(values, axis=axis)
+    quant_low = median - _np.quantile(values, min(q), axis=axis)
+    quant_high = _np.quantile(values, max(q), axis=axis) - median
+    return median, quant_low, quant_high
 
 
 def create_theta(teffs: Union[List[float], float],
