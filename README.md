@@ -5,8 +5,9 @@ SED fitting library suitable for single or multiple stars
 You can install sed_fit is as a pip package. Simply run the following within the context
 of your own base or custom python virtual environment:
 
+```sh
 $ pip install git+https://github.com/SteveOv/sed_fit
-
+```
 This will install the fitter module, the pre-built stellar grids and any required support
 libraries. With this setup you will be able to perform both minimize and mcmc fitting of
 SED observations against the pre-build stellar grids.
@@ -15,7 +16,7 @@ While the [fitting-a-sed-new.ipynb](../main/fitting-a-sed-new.ipynb) jupyter pag
 installed as part of the package, it can be viewed directly on GitHub where it offers
 a useful tutorial on using the fitter and model grids.
 
-## Setup of runtime environment
+## Setup of the runtime for the entire repo
 Alternatively you can set up the entire code base, which has been developed within a
 Python3 virtual environment supporting Python 3.9-3.12, matplotlib, astropy, astroquery,
 lightkurve, emcee, and the custom [deblib](https://github.com/SteveOv/deblib) package
