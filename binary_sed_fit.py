@@ -130,44 +130,9 @@ if __name__ == "__main__":
         av = 0.000515 / 3.1
         sed["sed_der_flux"] = sed["sed_flux"] / ext_model.extinguish(sed["sed_wl"].to(u.um), Av=av)
 
-    NUM_STARS = 2
-    fit_mask = np.array([True] * NUM_STARS      # Teff
-                        + [False] * NUM_STARS   # logg
-                        + [True] * NUM_STARS    # radius
-                        + [False]               # dist
-                        + [fit_av])             # av
-
-    # For now, hard coded to 2 stars. Same order as theta: teff, radii (, logg, dist are not fitted)
-    teff_limits = model_grid.teff_range
-    radius_limits = (0.1, 100)
-    dist_limits = (target_data["distance_pc"] * 0.9, target_data["distance_pc"] * 1.1)
-    av_limits = (0, 0.9)
-    teff_ratio = (target_data["teff_ratio"].n, max(target_data["teff_ratio"].n * 0.1, target_data["teff_ratio"].s))
-    radius_ratio = (target_data["k"].n, max(target_data["k"].n * 0.1, target_data["k"].s))
-
-    def ln_prior_func(theta: np.ndarray[float]) -> float:
-        """
-        The fitting prior callback function to evaluate the current set of candidate
-        parameters (theta), returning a single ln(value) indicating their "goodness".
-        """
-        teffs, loggs, radii, dist, av = theta[0:2], theta[2:4], theta[4:6], theta[6], theta[7]
-
-        # Limit criteria checks - hard pass/fail on these
-        if not all(teff_limits[0] <= t <= teff_limits[1] for t in teffs) or \
-            not all(radius_limits[0] <= r <= radius_limits[1] for r in radii) or \
-            not dist_limits[0] <= dist <= dist_limits[1] or \
-            not av_limits[0] <= av <= av_limits[1]:
-            return np.inf
-
-        # Gaussian prior criteria: g(x) = 1/(σ*sqrt(2*pi)) * exp(-1/2 * (x-µ)^2/σ^2)
-        # Omitting scaling expressions for now and note the implicit ln() cancelling the exp
-        return 0.5 * np.sum([
-            ((teffs[1] / teffs[0] - teff_ratio[0]) / teff_ratio[1])**2,
-            ((radii[1] / radii[0] - radius_ratio[0]) / radius_ratio[1])**2,
-        ])
-
     # Set up the initial fit position. The fit mask indicates we're only fitting teffs & radii
     print("\nSetting up data for fitting")
+    NUM_STARS = 2
     theta0 = fitter.create_theta(teffs=[target_data["teff_sys"].n] * NUM_STARS,
                                   loggs=[target_data["logg_sys"].n] * NUM_STARS,
                                   radii=[1.0] * NUM_STARS,
@@ -175,6 +140,57 @@ if __name__ == "__main__":
                                   av=0,
                                   nstars=NUM_STARS,
                                   verbose=True)
+
+    fit_mask = np.array([True] * NUM_STARS      # Teff
+                        + [False] * NUM_STARS   # logg
+                        + [True] * NUM_STARS    # radius
+                        + [False]               # dist
+                        + [fit_av])             # av
+
+    teff_limits = model_grid.teff_range
+    radius_limits = (0.1, 100)
+
+    # Ratios wrt the primary component
+    teff_ratios = [1] + [ufloat(target_data["teff_ratio"].n, max(target_data["teff_ratio"].n * 0.05,
+                                                                 target_data["teff_ratio"].s))] * (NUM_STARS - 1)
+    rad_ratios = [1] + [ufloat(target_data["k"].n, max(target_data["k"].n * 0.05,
+                                                       target_data["k"].s))] * (NUM_STARS - 1)
+
+    # Distance & AV priors - only effect the outcome if these are fitted
+    dist_prior = ufloat(theta0[-2], theta0[-2] * 0.05)
+    av_prior = ufloat(theta0[-1], theta0[-1] * 0.1)
+
+    print(f"Priors:  Teff ratios={', '.join(f'{r:.3f}' for r in teff_ratios[1:])},",
+            f"radius ratios={', '.join(f'{r:.3f}' for r in rad_ratios[1:])},",
+            f"dist={dist_prior:.3f},",
+            f"Teff_limits={teff_limits}, radius_limits={radius_limits}")
+
+    def ln_prior_func(theta: np.ndarray[float]) -> float:
+        """
+        The fitting prior callback function to evaluate the current set of candidate parameters
+        (theta), returning a single negative ln(value) indicating their "goodness".
+
+        Return a negative value as emcee will try to maximize the sum of this and the negative value
+        of its ln_prob_func. The fitter component knows to flip the sign if we run a minimize fit.
+        """
+        teffs = theta[0 : NUM_STARS]
+        radii = theta[2*NUM_STARS : 2*NUM_STARS + NUM_STARS]
+        dist, av = theta[-2], theta[-1]
+
+        # Limit criteria checks - hard pass/fail on these
+        if not all(teff_limits[0] <= t <= teff_limits[1] for t in teffs) or \
+            not all(radius_limits[0] <= r <= radius_limits[1] for r in radii):
+            return -np.inf
+
+        # Gaussian prior criteria: g(x) = 1/(σ*sqrt(2*pi)) * exp(-1/2 * (x-µ)^2/σ^2)
+        # Omitting scaling expressions and note the implicit ln() cancelling the exp()
+        ret_val = 0
+        for ix in range(1, NUM_STARS): # Ratios
+            ret_val += ((teffs[ix]/teffs[0] - teff_ratios[ix].n) / teff_ratios[ix].s)**2
+            ret_val += ((radii[ix]/radii[0] - rad_ratios[ix].n) / rad_ratios[ix].s)**2
+        # ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
+        # ret_val += ((av - av_prior.n) / av_prior.s)**2
+        return -0.5 * ret_val
 
     # Get the sed data to be fitted
     x = model_grid.get_filter_indices(sed["sed_filter"])

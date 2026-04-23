@@ -61,7 +61,7 @@ def _ln_likelihood_func(y_model: _np.ndarray[float], degrees_of_freedom: int) ->
     :returns: the goodness of the fit
     """
     chisq = _np.sum(_weights * (_y - y_model)**2) / degrees_of_freedom
-    return 0.5 * chisq
+    return -0.5 * chisq
 
 
 def model_func(theta: _np.ndarray[float],
