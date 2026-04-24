@@ -57,7 +57,7 @@ def _ln_likelihood_func(y_model: _np.ndarray[float], degrees_of_freedom: int) ->
     - _weights: the weights to apply to each observation/model y value
 
     :y_model: the model y values
-    :degrees_of_freedom: the #observations/#params
+    :degrees_of_freedom: the #observations - #params
     :returns: the goodness of the fit
     """
     chisq = _np.sum(_weights * (_y - y_model)**2) / degrees_of_freedom
@@ -93,12 +93,20 @@ def model_func(theta: _np.ndarray[float],
     return y_model
 
 
-def _objective_func(fit_theta: _np.ndarray[float], minimizable: bool=False) -> float:
+def _ln_prob_func(fit_theta: _np.ndarray[float]) -> float:
     """
-    The function to be optimized by adjusting theta so that the return value converges to zero.
+    The MCMC function which returns the log posterior probability; the probability that the
+    candidate params (theta) are those responsible for the observations. This is a negative
+    value tending towards zero as the probability increases. Think of this as:
 
-    :fit_theta: current set of candidate fitted parameters only
-    :minimizable: whether this function is minimizable (returns positive) or not (returns negative)
+    ln(P(posterior)) = ln(P(prior) * P(likelihood)) = _ln_prior_func() + _ln_likelihood_func()
+
+    This takes the current set of fitted params (fit_theta) and merges them with the fixed params.
+    The resulting param set (theta) is first evaluated by the prior function, then a model is
+    generated from them, with model_func & its chosen stellar_grid, which is then evaluated against
+    the observations with the likelihood function. The ln(product) of the two values is returned.
+
+    :fit_theta: current set of candidate fitted parameters only (those given by the _fit_mask)
     :returns: the result of evaluating the fitted model against the observations
     """
     # Combine the fitted and fixed parameters to make a full set.
@@ -111,10 +119,7 @@ def _objective_func(fit_theta: _np.ndarray[float], minimizable: bool=False) -> f
         degr_freedom = y_model.shape[0] - fit_theta.shape[0]
         retval += _ln_likelihood_func(y_model, degr_freedom)
 
-        _np.nan_to_num(retval, copy=False, nan=_np.inf)
-
-    if minimizable != (retval >= 0):
-        return -retval
+        _np.nan_to_num(retval, copy=False, nan=-_np.inf)
     return retval
 
 
@@ -178,7 +183,7 @@ def minimize_fit(x: _np.ndarray[float],
 
         best_soln, best_method = None, None
         for method in methods:
-            soln = _minimize(_objective_func, x0=theta0[fit_mask], args=(True), # minimizable
+            soln = _minimize(lambda *args: -_ln_prob_func(*args), x0=theta0[fit_mask],
                              method=method, options={ "maxiter": max_iters, "maxfev": max_iters })
             if verbose:
                 print(f"({method})", "succeeded" if soln.success else f"failed [{soln.message}]",
@@ -278,7 +283,7 @@ def mcmc_fit(x: _np.ndarray[float],
             if early_stopping:
                 print(f"Early stopping is considered after {early_stopping_from:d} steps.")
 
-        sampler = EnsembleSampler(int(nwalkers), ndim, _objective_func, pool=pool)
+        sampler = EnsembleSampler(int(nwalkers), ndim, _ln_prob_func, pool=pool)
         step = 0
         for _ in sampler.sample(initial_state=p0, iterations=nsteps // thin_by,
                                 thin_by=thin_by, tune=True, progress=progress):
