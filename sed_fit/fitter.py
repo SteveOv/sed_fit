@@ -37,32 +37,32 @@ _fixed_theta: _np.ndarray[float]
 _fit_mask: _np.ndarray[bool]
 _x: _np.ndarray[float]
 _y: _np.ndarray[float]
-_weights: _np.ndarray[float]
-_ln_prior_func: Callable[[_np.ndarray[float]], float]
+_y_err_sq: _np.ndarray[float]
+_degr_free: int
 _stellar_grid: StellarGrid
+_ln_prior_func: Callable[[_np.ndarray[float]], float]
+_ln_likelihood_func: Callable[[_np.ndarray[float]], float]
 
 # Try to protect them as much as possible by wrapping writes within a critical section
 _fit_mutex = _Lock()
 
-
-def _ln_likelihood_func(y_model: _np.ndarray[float], degrees_of_freedom: int) -> float:
+def _ln_rchisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
     """
     The fitting likelihood function used to evaluate the model y values against the observations,
     returning a single negative value indicating the goodness of the fit.
     
-    Based on a weighted chi^2: chi^2_w = 1/(N_obs-n_param) * Σ W(y-y_model)^2
-
+    Based on a reduced chi^2: chi^2_nu = 1/(N_obs-n_param) * Σ (y-y_model)^2/y_err^2
+    
     Accesses the following global variables which will be set by call to (minimize|mcmc)_fit()
     - _y: the observed y values
-    - _weights: the weights to apply to each observation/model y value
+    - _y_err_sq: the variance (y_err^2) in the observations
+    - _degr_freedom: the degrees of freedom (#obs - #param)
 
     :y_model: the model y values
-    :degrees_of_freedom: the #observations - #params
     :returns: the goodness of the fit
     """
-    chisq = _np.sum(_weights * (_y - y_model)**2) / degrees_of_freedom
-    return -0.5 * chisq
-
+    rchisq = _np.sum((_y - y_model)**2 / _y_err_sq) / _degr_free
+    return -0.5 * rchisq
 
 def model_func(theta: _np.ndarray[float],
                x: _np.ndarray[float]=None,
@@ -115,10 +115,7 @@ def _ln_prob_func(fit_theta: _np.ndarray[float]) -> float:
 
     if _np.isfinite(retval := _ln_prior_func(theta)):
         y_model = model_func(theta, combine=True)
-
-        degr_freedom = y_model.shape[0] - fit_theta.shape[0]
-        retval += _ln_likelihood_func(y_model, degr_freedom)
-
+        retval += _ln_likelihood_func(y_model)
         _np.nan_to_num(retval, copy=False, nan=-_np.inf)
     return retval
 
@@ -136,14 +133,15 @@ def _print_theta(theta: _np.ndarray[float],
 
 
 def minimize_fit(x: _np.ndarray[float],
-                 y: _np.ndarray[float],
-                 y_err: _np.ndarray[float],
-                 theta0: _np.ndarray[float],
-                 fit_mask: _np.ndarray[float],
-                 ln_prior_func: Callable[[_np.ndarray[float]], float],
-                 stellar_grid: StellarGrid,
-                 methods: List[str]=None,
-                 verbose: bool=False) -> Tuple[_np.ndarray[float], OptimizeResult]:
+                y: _np.ndarray[float],
+                y_err: _np.ndarray[float],
+                theta0: _np.ndarray[float],
+                fit_mask: _np.ndarray[float],
+                stellar_grid: StellarGrid,
+                ln_prior_func: Callable[[_np.ndarray[float]], float],
+                ln_likelihood_func: Callable[[_np.ndarray[float]],float]=_ln_rchisq_likelihood_func,
+                methods: List[str]=None,
+                verbose: bool=False) -> Tuple[_np.ndarray[float], OptimizeResult]:
     """
     Quick fit model star(s) to the SED with scipy minimize fit of the model data generated from
     a combination of the fixed params on class iniialization and the fitted ones given here.
@@ -154,8 +152,9 @@ def minimize_fit(x: _np.ndarray[float],
     :y_err: the flux error bars, at x, for the observed SED data
     :theta0: the initial set of candidate parameters for the model SED
     :fit_mask: a mask on theta0 to pick the parameters that are fitted, the rest being fixed
-    :ln_prior_func: a callback function to evaluate the current theta against prior criteria
     :stellar_grid: a StellarGrid instance with which model fluxes will be generated
+    :ln_prior_func: a callback function to evaluate the current theta against prior criteria
+    :ln_likelihood_func: a callback function to evaluate the goodness of fit of model vs observation
     :methods: scipy optimize fitting algorithms to try, defaults to [Nelder-Mead, SLSQP, None]
     :returns: the final set of parameters & a scipy OptimizeResult with the details of the outcome
     """
@@ -175,11 +174,12 @@ def minimize_fit(x: _np.ndarray[float],
         _filterwarnings("ignore", "Unknown solver options:")
 
         # Now we've got exclusive access, we can set the globals required for fitting
-        # pylint: disable=global-statement
-        global _x, _y, _weights, _fixed_theta, _fit_mask, _ln_prior_func, _stellar_grid
-        _x, _y, _weights = x, y, 1 / y_err**2
-        _fixed_theta, _fit_mask = _np.where(fit_mask, None, theta0), fit_mask
-        _ln_prior_func, _stellar_grid = ln_prior_func, stellar_grid
+        # pylint: disable=global-statement, line-too-long
+        global _x, _y, _y_err_sq, _degr_free, _fixed_theta, _fit_mask, _stellar_grid
+        _x, _y, _y_err_sq, _degr_free = x, y, y_err**2, y.shape[0] - sum(fit_mask)
+        _fixed_theta, _fit_mask, _stellar_grid = _np.where(fit_mask, None, theta0), fit_mask, stellar_grid
+        global _ln_prior_func, _ln_likelihood_func
+        _ln_prior_func, _ln_likelihood_func = ln_prior_func, ln_likelihood_func
 
         best_soln, best_method = None, None
         for method in methods:
@@ -210,8 +210,9 @@ def mcmc_fit(x: _np.ndarray[float],
              y_err: _np.ndarray[float],
              theta0: _np.ndarray[float],
              fit_mask: _np.ndarray[bool],
-             ln_prior_func: Callable[[_np.ndarray[float]], float],
              stellar_grid: StellarGrid,
+             ln_prior_func: Callable[[_np.ndarray[float]], float],
+             ln_likelihood_func: Callable[[_np.ndarray[float]], float]=_ln_rchisq_likelihood_func,
              nwalkers: int=100,
              nsteps: int=100000,
              thin_by: int=10,
@@ -234,8 +235,9 @@ def mcmc_fit(x: _np.ndarray[float],
     :y_err: the flux error bars, at x, for the observed SED data
     :theta0: the initial set of candidate parameters for the model SED
     :fit_mask: a mask on theta0 to pick the parameters that are fitted, the rest being fixed
-    :ln_prior_func: a callback function to evaluate the current theta against prior criteria
     :stellar_grid: a StellarGrid instance with which model fluxes will be generated
+    :ln_prior_func: a callback function to evaluate the current theta against prior criteria
+    :ln_likelihood_func: a callback function to evaluate the goodness of fit of model vs observation
     :nwalkers: the number of mcmc walkers to employ
     :nsteps: the maximium number of mcmc steps to make for each walker
     :thin_by: step interval to inspect fit progress
@@ -266,11 +268,12 @@ def mcmc_fit(x: _np.ndarray[float],
         _filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
 
         # Now we've got exclusive access, we can set the globals required for fitting
-        # pylint: disable=global-statement
-        global _x, _y, _weights, _fixed_theta, _fit_mask, _ln_prior_func, _stellar_grid
-        _x, _y, _weights = x, y, 1 / y_err**2
-        _fixed_theta, _fit_mask = _np.where(fit_mask, None, theta0), fit_mask
-        _ln_prior_func, _stellar_grid = ln_prior_func, stellar_grid
+        # pylint: disable=global-statement, line-too-long
+        global _x, _y, _y_err_sq, _degr_free, _fixed_theta, _fit_mask, _stellar_grid
+        _x, _y, _y_err_sq, _degr_free = x, y, y_err**2, y.shape[0] - sum(fit_mask)
+        _fixed_theta, _fit_mask, _stellar_grid = _np.where(fit_mask, None, theta0), fit_mask, stellar_grid
+        global _ln_prior_func, _ln_likelihood_func
+        _ln_prior_func, _ln_likelihood_func = ln_prior_func, ln_likelihood_func
 
         if early_stopping_from is None or early_stopping_from <= 0:
             # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
