@@ -105,11 +105,11 @@ if __name__ == "__main__":
     # Filter SED to those covered by our models and also remove any outliers
     model_mask = np.ones((len(sed)), dtype=bool)
     model_mask &= model_grid.has_filter(sed["sed_filter"])
+    model_mask &= np.isin(sed["sed_filter"], ["Cousins:I", "WISE:W4"], invert=True)
     model_mask &= (sed["sed_wl"] >= min(ext_wl_range)) \
                 & (sed["sed_wl"] <= max(ext_wl_range)) \
                 & (sed["sed_wl"] >= min(model_grid.wavelength_range)) \
-                & (sed["sed_wl"] <= max(model_grid.wavelength_range)) \
-                & (sed["sed_wl"] <= 22 * u.um) # Dirty fix to avoid WISE:W4 which causes problems
+                & (sed["sed_wl"] <= max(model_grid.wavelength_range))
     sed = sed[model_mask]
 
     out_mask = create_outliers_mask(sed, target_data["teff_sys"].n, [target_data["teff_ratio"].n],
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     sed = sed[~out_mask]
 
     sed.sort(["sed_wl"])
-    print(f"{len(sed)} unique SED observation(s) retained after range and outlier filtering",
+    print(f"{len(sed)} unique SED observation(s) retained after range, filter & outlier filtering",
             "\nwith the units for flux, frequency and wavelength being",
         ", ".join(f"{sed[f].unit:unicode}" for f in ["sed_flux", "sed_freq", "sed_wl"]))
 

@@ -46,13 +46,16 @@ _ln_likelihood_func: Callable[[_np.ndarray[float]], float]
 # Try to protect them as much as possible by wrapping writes within a critical section
 _fit_mutex = _Lock()
 
-def _ln_rchisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
+def rchisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
     """
-    The fitting likelihood function used to evaluate the model y values against the observations,
-    returning a single negative value indicating the goodness of the fit.
+    A simple default fitting likelihood function used to evaluate the model values against
+    the observations, returning a single negative value indicating the goodness of the fit.
     
-    Based on a reduced chi^2: chi^2_nu = 1/(N_obs-n_param) * Σ (y-y_model)^2/y_err^2
-    
+    Based on a reduced chi^2: chi^2_r = 1/(N_obs-n_param) * Σ (y-y_model)^2/y_err^2
+
+    A chi^2_r value of 1 indicates the best possible fit, a value << 1 indicates overfitting and
+    a value >> 1 indicates underfitting. This function returns the negative abs difference from 1.
+
     Accesses the following global variables which will be set by call to (minimize|mcmc)_fit()
     - _y: the observed y values
     - _y_err_sq: the variance (y_err^2) in the observations
@@ -61,8 +64,7 @@ def _ln_rchisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
     :y_model: the model y values
     :returns: the goodness of the fit
     """
-    rchisq = _np.sum((_y - y_model)**2 / _y_err_sq) / _degr_free
-    return -0.5 * rchisq
+    return -abs(1 - (_np.sum((_y - y_model)**2 / _y_err_sq) / _degr_free))
 
 def model_func(theta: _np.ndarray[float],
                x: _np.ndarray[float]=None,
@@ -120,18 +122,6 @@ def _ln_prob_func(fit_theta: _np.ndarray[float]) -> float:
     return retval
 
 
-def _print_theta(theta: _np.ndarray[float],
-                 fit_mask: _np.ndarray[bool],
-                 prefix: str="",
-                 suffix: str=""):
-    """ Utility function for pretty printing theta arrays & highlighting which items are fitted. """
-    print((prefix if prefix else '') +
-          "[" +
-          ", ".join(f"{t:.3e}{'*' if f else ''}" for t, f in zip(theta, fit_mask)) +
-          "]" +
-          (suffix if suffix else ''))
-
-
 def minimize_fit(x: _np.ndarray[float],
                 y: _np.ndarray[float],
                 y_err: _np.ndarray[float],
@@ -139,7 +129,7 @@ def minimize_fit(x: _np.ndarray[float],
                 fit_mask: _np.ndarray[float],
                 stellar_grid: StellarGrid,
                 ln_prior_func: Callable[[_np.ndarray[float]], float],
-                ln_likelihood_func: Callable[[_np.ndarray[float]],float]=_ln_rchisq_likelihood_func,
+                ln_likelihood_func: Callable[[_np.ndarray[float]],float]=rchisq_likelihood_func,
                 methods: List[str]=None,
                 verbose: bool=False) -> Tuple[_np.ndarray[float], OptimizeResult]:
     """
@@ -212,7 +202,7 @@ def mcmc_fit(x: _np.ndarray[float],
              fit_mask: _np.ndarray[bool],
              stellar_grid: StellarGrid,
              ln_prior_func: Callable[[_np.ndarray[float]], float],
-             ln_likelihood_func: Callable[[_np.ndarray[float]], float]=_ln_rchisq_likelihood_func,
+             ln_likelihood_func: Callable[[_np.ndarray[float]], float]=rchisq_likelihood_func,
              nwalkers: int=100,
              nsteps: int=100000,
              thin_by: int=10,
@@ -437,3 +427,15 @@ def iterate_theta(theta: _np.ndarray[float]):
     av = theta[-1]
     for star in range(nstars):
         yield theta[star], theta[nstars*1 + star], theta[nstars*2 + star], dist, av
+
+
+def _print_theta(theta: _np.ndarray[float],
+                 fit_mask: _np.ndarray[bool],
+                 prefix: str="",
+                 suffix: str=""):
+    """ Utility function for pretty printing theta arrays & highlighting which items are fitted. """
+    print((prefix if prefix else '') +
+          "[" +
+          ", ".join(f"{t:.3e}{'*' if f else ''}" for t, f in zip(theta, fit_mask)) +
+          "]" +
+          (suffix if suffix else ''))
