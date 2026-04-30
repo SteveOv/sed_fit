@@ -37,8 +37,8 @@ _fixed_theta: _np.ndarray[float]
 _fit_mask: _np.ndarray[bool]
 _x: _np.ndarray[float]
 _y: _np.ndarray[float]
-_y_err_sq: _np.ndarray[float]
-_degr_free: int
+_y_err: _np.ndarray[float]
+_degr_free: float
 _stellar_grid: StellarGrid
 _ln_prior_func: Callable[[_np.ndarray[float]], float]
 _ln_likelihood_func: Callable[[_np.ndarray[float]], float]
@@ -46,25 +46,24 @@ _ln_likelihood_func: Callable[[_np.ndarray[float]], float]
 # Try to protect them as much as possible by wrapping writes within a critical section
 _fit_mutex = _Lock()
 
-def rchisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
+def _ln_chisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
     """
     A simple default fitting likelihood function used to evaluate the model values against
     the observations, returning a single negative value indicating the goodness of the fit.
     
-    Based on a reduced chi^2: chi^2_r = 1/(N_obs-n_param) * Σ (y-y_model)^2/y_err^2
+    Based on a weighted least squares/chi^2 metric: chi^2 = Σ (y - y_model)^2 / y_err^2
 
-    A chi^2_r value of 1 indicates the best possible fit, a value << 1 indicates overfitting and
-    a value >> 1 indicates underfitting. This function returns the negative abs difference from 1.
+    This is divided by the degrees of freedom, then multiplied by -0.5 to give the ~ln() value.
 
     Accesses the following global variables which will be set by call to (minimize|mcmc)_fit()
     - _y: the observed y values
-    - _y_err_sq: the variance (y_err^2) in the observations
-    - _degr_freedom: the degrees of freedom (#obs - #param)
+    - _y_err: the uncertainties in the observations
+    - _degr_free: the degrees of freedom in the model
 
     :y_model: the model y values
     :returns: the goodness of the fit
     """
-    return -abs(1 - (_np.sum((_y - y_model)**2 / _y_err_sq) / _degr_free))
+    return -0.5 * _np.sum(((_y - y_model) / _y_err)**2)  / _degr_free
 
 def model_func(theta: _np.ndarray[float],
                x: _np.ndarray[float]=None,
@@ -129,7 +128,7 @@ def minimize_fit(x: _np.ndarray[float],
                 fit_mask: _np.ndarray[float],
                 stellar_grid: StellarGrid,
                 ln_prior_func: Callable[[_np.ndarray[float]], float],
-                ln_likelihood_func: Callable[[_np.ndarray[float]],float]=rchisq_likelihood_func,
+                ln_likelihood_func: Callable[[_np.ndarray[float]],float]=_ln_chisq_likelihood_func,
                 methods: List[str]=None,
                 verbose: bool=False) -> Tuple[_np.ndarray[float], OptimizeResult]:
     """
@@ -163,13 +162,7 @@ def minimize_fit(x: _np.ndarray[float],
         _filterwarnings("ignore", "Desired error not necessarily achieved due to precision loss.")
         _filterwarnings("ignore", "Unknown solver options:")
 
-        # Now we've got exclusive access, we can set the globals required for fitting
-        # pylint: disable=global-statement, line-too-long
-        global _x, _y, _y_err_sq, _degr_free, _fixed_theta, _fit_mask, _stellar_grid
-        _x, _y, _y_err_sq, _degr_free = x, y, y_err**2, y.shape[0] - sum(fit_mask)
-        _fixed_theta, _fit_mask, _stellar_grid = _np.where(fit_mask, None, theta0), fit_mask, stellar_grid
-        global _ln_prior_func, _ln_likelihood_func
-        _ln_prior_func, _ln_likelihood_func = ln_prior_func, ln_likelihood_func
+        _set_globals(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
 
         best_soln, best_method = None, None
         for method in methods:
@@ -202,7 +195,7 @@ def mcmc_fit(x: _np.ndarray[float],
              fit_mask: _np.ndarray[bool],
              stellar_grid: StellarGrid,
              ln_prior_func: Callable[[_np.ndarray[float]], float],
-             ln_likelihood_func: Callable[[_np.ndarray[float]], float]=rchisq_likelihood_func,
+             ln_likelihood_func: Callable[[_np.ndarray[float]], float]=_ln_chisq_likelihood_func,
              nwalkers: int=100,
              nsteps: int=100000,
              thin_by: int=10,
@@ -257,13 +250,7 @@ def mcmc_fit(x: _np.ndarray[float],
         _filterwarnings("ignore", message="invalid value encountered in ")
         _filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
 
-        # Now we've got exclusive access, we can set the globals required for fitting
-        # pylint: disable=global-statement, line-too-long
-        global _x, _y, _y_err_sq, _degr_free, _fixed_theta, _fit_mask, _stellar_grid
-        _x, _y, _y_err_sq, _degr_free = x, y, y_err**2, y.shape[0] - sum(fit_mask)
-        _fixed_theta, _fit_mask, _stellar_grid = _np.where(fit_mask, None, theta0), fit_mask, stellar_grid
-        global _ln_prior_func, _ln_likelihood_func
-        _ln_prior_func, _ln_likelihood_func = ln_prior_func, ln_likelihood_func
+        _set_globals(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
 
         if early_stopping_from is None or early_stopping_from <= 0:
             # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
@@ -439,3 +426,21 @@ def _print_theta(theta: _np.ndarray[float],
           ", ".join(f"{t:.3e}{'*' if f else ''}" for t, f in zip(theta, fit_mask)) +
           "]" +
           (suffix if suffix else ''))
+
+
+def _set_globals(x: _np.ndarray[float],
+                         y: _np.ndarray[float],
+                         y_err: _np.ndarray[float],
+                         theta0: _np.ndarray[float],
+                         fit_mask: _np.ndarray[bool],
+                         stellar_grid: StellarGrid,
+                         ln_prior_func: Callable[[_np.ndarray[float]], float],
+                         ln_likelihood_func: Callable[[_np.ndarray[float]], float]):
+    """ Utility function to set the various (hateful) globals required for fitting. """
+    # pylint: disable=global-statement, line-too-long
+    # Set the degr_free to N_obs-1, rather than N_obs-N_param, as N_obs tends to be small
+    # and we're not comparing models, just sampling/optimizing parameters, so N_param is fixed.
+    global _x, _y, _y_err, _degr_free, _fixed_theta, _fit_mask, _stellar_grid, _ln_prior_func, _ln_likelihood_func
+    _x, _y, _y_err, _degr_free = x, y, y_err, y.shape[0] - 1
+    _fixed_theta, _fit_mask, _stellar_grid = _np.where(fit_mask,None,theta0), fit_mask, stellar_grid
+    _ln_prior_func, _ln_likelihood_func = ln_prior_func, ln_likelihood_func
