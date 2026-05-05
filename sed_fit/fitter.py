@@ -51,9 +51,11 @@ def _ln_chisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
     A simple default fitting likelihood function used to evaluate the model values against
     the observations, returning a single negative value indicating the goodness of the fit.
     
-    Based on a weighted least squares/chi^2 metric: chi^2 = Σ (y - y_model)^2 / y_err^2
+    Based on a reduced chi^2 metric: chi^2_r = (Σ (y - y_model)^2 / y_err^2) / degr_free
 
-    This is divided by the degrees of freedom, then multiplied by -0.5 to give the ~ln() value.
+    Based on the assumption that a chi^2_r of 1 indicates the best possible fit (with < 1
+    indicating overfitting and > 1 underfitting) we find the absolute difference from one.
+    Multiplied by -0.5 to give the ~ln() value.
 
     Accesses the following global variables which will be set by call to (minimize|mcmc)_fit()
     - _y: the observed y values
@@ -63,7 +65,7 @@ def _ln_chisq_likelihood_func(y_model: _np.ndarray[float]) -> float:
     :y_model: the model y values
     :returns: the goodness of the fit
     """
-    return -0.5 * _np.sum(((_y - y_model) / _y_err)**2)  / _degr_free
+    return -0.5 * _np.abs(1 - (_np.sum(((_y - y_model) / _y_err)**2)  / _degr_free))
 
 def model_func(theta: _np.ndarray[float],
                x: _np.ndarray[float]=None,
@@ -438,9 +440,7 @@ def _set_globals(x: _np.ndarray[float],
                          ln_likelihood_func: Callable[[_np.ndarray[float]], float]):
     """ Utility function to set the various (hateful) globals required for fitting. """
     # pylint: disable=global-statement, line-too-long
-    # Set the degr_free to N_obs-1, rather than N_obs-N_param, as N_obs tends to be small
-    # and we're not comparing models, just sampling/optimizing parameters, so N_param is fixed.
     global _x, _y, _y_err, _degr_free, _fixed_theta, _fit_mask, _stellar_grid, _ln_prior_func, _ln_likelihood_func
-    _x, _y, _y_err, _degr_free = x, y, y_err, y.shape[0] - 1
+    _x, _y, _y_err, _degr_free = x, y, y_err, y.shape[0] - sum(fit_mask)
     _fixed_theta, _fit_mask, _stellar_grid = _np.where(fit_mask,None,theta0), fit_mask, stellar_grid
     _ln_prior_func, _ln_likelihood_func = ln_prior_func, ln_likelihood_func
