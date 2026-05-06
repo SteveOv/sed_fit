@@ -138,6 +138,8 @@ def minimize_fit(x: _np.ndarray[float],
     a combination of the fixed params on class iniialization and the fitted ones given here.
     Will choose the best performing fit from the algorithms in methods.
 
+    Will raise a ValueError if theta0 does not pass a priors check with ln_prior_func().
+
     :x: the wavelength/filter values for the observed SED data
     :y: the flux values, at x, for the observed SED data
     :y_err: the flux error bars, at x, for the observed SED data
@@ -151,6 +153,9 @@ def minimize_fit(x: _np.ndarray[float],
     """
     if verbose:
         _print_theta(theta0, fit_mask, "minimize_fit(theta0=", ")")
+
+    if not _np.isfinite(ln_prior_func(theta0)):
+        raise ValueError("theta0 failed ln_prior_func check.")
 
     if methods is None:
         methods = ["Nelder-Mead", "SLSQP", None]
@@ -215,6 +220,8 @@ def mcmc_fit(x: _np.ndarray[float],
     Will run up to niters iterations. Every 1000 iterations will check if the fit has
     converged and will stop early if that is the case
 
+    Will raise a ValueError if theta0 does not pass a priors check with ln_prior_func().
+
     :x: the wavelength/filter values for the observed SED data
     :y: the flux values, at x, for the observed SED data
     :y_err: the flux error bars, at x, for the observed SED data
@@ -237,13 +244,20 @@ def mcmc_fit(x: _np.ndarray[float],
     if verbose:
         _print_theta(theta0, fit_mask, "mcmc_fit(theta0=", ")")
 
+    if not _np.isfinite(ln_prior_func(theta0)):
+        raise ValueError("theta0 failed ln_prior_func check.")
+
     rng = _np.random.default_rng(seed)
     theta_fit = theta0[fit_mask]
     ndim = len(theta_fit)
     tau = [_np.inf] * ndim
 
-    # Starting positions for the walkers clustered around theta0
-    p0 = [theta_fit + (theta_fit * rng.normal(0, 0.05, ndim)) for _ in _np.arange(int(nwalkers))]
+    # Starting positions for the walkers clustered around theta0, via priors to ensure they're valid
+    p0, test_theta = [], theta0.copy()
+    while len(p0) < int(nwalkers):
+        test_theta[fit_mask] = theta_fit + (theta_fit * rng.normal(0, 0.05, ndim))
+        if _np.isfinite(ln_prior_func(test_theta)):
+            p0 += [test_theta[fit_mask]]
 
     with _fit_mutex, \
             _Pool(processes=processes) as pool, \
