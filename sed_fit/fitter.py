@@ -258,7 +258,7 @@ def mcmc_fit(x: _np.ndarray[float],
     # Starting positions for the walkers clustered around theta0, via priors to ensure they're valid
     p0, test_theta = [], theta0.copy()
     while len(p0) < int(nwalkers):
-        test_theta[fit_mask] = theta_fit + (theta_fit * rng.normal(0, 0.05, ndim))
+        test_theta[fit_mask] = theta_fit + (theta_fit * rng.normal(0, 0.25, ndim))
         if _np.isfinite(ln_prior_func(test_theta)):
             p0 += [test_theta[fit_mask]]
 

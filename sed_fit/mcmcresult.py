@@ -26,8 +26,8 @@ class McmcResult():
     @property
     def burn_in_iters(self) -> int:
         """ The estimated number of iterations (steps/thin_by) for the burn-in """
-        def_tau_iters = self._sampler.iteration / 10
-        return int(_np.ceil(max(_np.nan_to_num(self.tau_iters, copy=True, nan=def_tau_iters)) * 2))
+        def_tau_iters = self._sampler.iteration / 25
+        return int(_np.ceil(max(_np.nan_to_num(self.tau_iters, copy=True, nan=def_tau_iters)) * 5))
 
     @property
     def burn_in_steps(self) -> int:
