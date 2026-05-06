@@ -2,7 +2,7 @@
 SED fitting library suitable for single or multiple stars
 
 > [!WARNING]
-> This is a development branch. Use [main](../main) for 'stable', pre-release code.
+> This is a development branch. Use [main](../main/) for 'stable', pre-release code.
 
 ## Using sed_fit as a package with pip
 You can install sed_fit is as a pip package. Simply run the following within the context
