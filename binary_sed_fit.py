@@ -202,13 +202,15 @@ if __name__ == "__main__":
     # Quick initial minimize fit
     print()
     theta_min, _ = fitter.minimize_fit(x, y, y_err, theta0, fit_mask, verbose=True,
-                                        ln_prior_func=ln_prior_func, stellar_grid=model_grid)
+                                       stellar_grid=model_grid, ln_prior_func=ln_prior_func)
 
     # MCMC fit, starting from where the minimize fit finished
     print()
-    theta_mcmc, _ = fitter.mcmc_fit(x, y, y_err, theta_min, fit_mask,
-                                     ln_prior_func=ln_prior_func, stellar_grid=model_grid,
-                                     processes=8, early_stopping=True, progress=True, verbose=True)
+    theta_mcmc, result = fitter.mcmc_fit(x, y, y_err, theta_min, fit_mask, verbose=True,
+                                         stellar_grid=model_grid, ln_prior_func=ln_prior_func,
+                                         processes=8, early_stopping=True, progress=True)
+
+    print(f"\nMCMC statistics\n{result}")
 
     # Output a comparison with known values (assuming we've fitted teffs and radii)
     print(f"\nFinal parameters for {TARGET} with nominals & 1-sigma error bars from MCMC fit")

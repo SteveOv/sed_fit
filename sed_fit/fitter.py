@@ -23,6 +23,7 @@ from uncertainties import UFloat as _UFloat
 from uncertainties.unumpy import uarray as _uarray
 
 from sed_fit.stellar_grids import StellarGrid
+from sed_fit.mcmcresult import McmcResult
 
 # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, no-member
 pc = (1 * _u.pc).to(_u.m).value
@@ -212,13 +213,15 @@ def mcmc_fit(x: _np.ndarray[float],
              early_stopping: bool=True,
              early_stopping_from: int=None,
              progress: Union[bool, str]=False,
-             verbose: bool=False) -> Tuple[_np.ndarray[_UFloat], EnsembleSampler]:
+             verbose: bool=False) -> Tuple[_np.ndarray[_UFloat], McmcResult]:
     """
-    Full fit model star(s) to the SED with an MCMC fit of the model data generated from
-    a combination of the fixed params on class iniialization and the fitted ones given here.
+    Fit model star(s) to the SED based on MCMC sampling of model parameters. The params are
+    evaluated with the ln_prior_func() against prior criteria and with the ln_likelihood_func()
+    which fits the model to the observations to give the likelihood (probability of the observations
+    given the model).
 
-    Will run up to niters iterations. Every 1000 iterations will check if the fit has
-    converged and will stop early if that is the case
+    Will run up to nsteps MCMC steps. If early_stopping is enabled a check is made every 1000 steps,
+    after early_stopping_from steps, and if the fit has converged the sampler will be stopped.
 
     Will raise a ValueError if theta0 does not pass a priors check with ln_prior_func().
 
@@ -239,7 +242,7 @@ def mcmc_fit(x: _np.ndarray[float],
     :early_stopping: stop fitting if solution has converged & further improvements are negligible
     :early_stopping_from: override the number of steps before early stopping is considered
     :progress: whether to show a progress bar (see emcee documentation for other values)
-    :returns: fitted set of parameters as UFloats and an EnsembleSampler with details of the outcome
+    :returns: fitted set of parameters as UFloats and an McmcResult with details of the outcome
     """
     if verbose:
         _print_theta(theta0, fit_mask, "mcmc_fit(theta0=", ")")
@@ -303,67 +306,11 @@ def mcmc_fit(x: _np.ndarray[float],
             print(f"Halting MCMC after {step:d} steps as the walkers are past",
                   "100 times the autocorrelation time & the fit has converged.")
 
-    # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
-    samples = samples_from_sampler(sampler, autocor_tol, thin_by, flat=True, verbose=verbose)
-    fit_nom, quant_low, quant_high = median_and_quantile_values(samples, axis=0)
-    theta_fit = _uarray(theta0, 0)
-    theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([quant_low, quant_high], axis=0))
-
+    result = McmcResult(theta0, fit_mask, sampler, autocor_tol, thin_by)
+    theta_fit = result.get_theta()
     if verbose:
         _print_theta(theta_fit, fit_mask, "The MCMC fit yielded theta:  ")
-
-    return theta_fit, sampler
-
-
-def samples_from_sampler(sampler: EnsembleSampler,
-                         autocor_tol: int=50,
-                         thin_by: int=1,
-                         flat: bool=False,
-                         verbose: bool=False) -> _np.ndarray:
-    """
-    Gets the chain of samples from the passed sampler after calculating and discarding the
-    estimated burn-in.
-    
-    :sampler: the completed sampler to inspect
-    :autocor_tol: the autocorrelation tolerance
-    :thin_by: step interval that was used to inspect the fit's progress and yield samples
-    :flat: whether or not to return flattened samples
-    :verbose: whether or not to write acceptance, sample and burn-in information to stdout
-    :returns: the post burn-in samples
-    """
-    tau_iters = sampler.get_autocorr_time(c=5, tol=autocor_tol, quiet=True)
-    def_tau_iter = sampler.iteration / 10
-    burn_in_iters = int(_np.ceil(max(_np.nan_to_num(tau_iters, copy=True, nan=def_tau_iter)) * 2))
-
-    # The chain consists of the samples at each iteration (equivalent to each thin_by step)
-    samples = sampler.get_chain(discard=burn_in_iters, flat=flat)
-
-    if verbose:
-        print(f"Mean Acceptance fraction:    {_np.mean(sampler.acceptance_fraction):.3f}")
-        print( "Autocorrelation steps (tau):", ", ".join(f"{t:.3f}" for t in tau_iters * thin_by))
-        print(f"Estimated burn-in steps:     {burn_in_iters * thin_by:,}")
-        print(f"Leaving samples of shape:    {samples.shape}", "*flattened" if flat else "")
-
-    return samples
-
-
-def median_and_quantile_values(values: Union[_np.ndarray[float], _np.ndarray[_UFloat]],
-                               q: Tuple[float, float]=(0.16, 0.84),
-                               axis: int=0) \
-                            -> Tuple[_np.ndarray[float], _np.ndarray[float], _np.ndarray[float]] :
-    """
-    Will calculate the median and q-th lower & uppers quantile values of the passed
-    array along the chosen axis.
-
-    :values: the values to aggregate
-    :q: a tuple in the form (q-lower, q-upper) of the lower and upper probabilities to calculate
-    :axis: the axis along which the median and quantiles are computed
-    :values: a tuple of arrays for the median, lower and upper quantiles
-    """
-    median = _np.median(values, axis=axis)
-    quant_low = median - _np.quantile(values, min(q), axis=axis)
-    quant_high = _np.quantile(values, max(q), axis=axis) - median
-    return median, quant_low, quant_high
+    return theta_fit, result
 
 
 def create_theta(teffs: Union[List[float], float],
