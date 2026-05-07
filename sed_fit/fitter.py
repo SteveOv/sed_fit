@@ -209,7 +209,7 @@ def mcmc_fit(x: _np.ndarray[float],
              thin_by: int=10,
              seed: int=42,
              processes: int=1,
-             autocor_tol: int=50,
+             autocorr_tol: float=50,
              early_stopping: bool=True,
              early_stopping_from: int=None,
              progress: Union[bool, str]=False,
@@ -225,6 +225,9 @@ def mcmc_fit(x: _np.ndarray[float],
 
     Will raise a ValueError if theta0 does not pass a priors check with ln_prior_func().
 
+    The resulting set of fitted parameters will be based on the MCMC sample nominals +/- 1-sigma
+    uncertainties. Fixed parameters will have uncertainties of zero.
+
     :x: the wavelength/filter values for the observed SED data
     :y: the flux values, at x, for the observed SED data
     :y_err: the flux error bars, at x, for the observed SED data
@@ -238,7 +241,7 @@ def mcmc_fit(x: _np.ndarray[float],
     :thin_by: step interval to inspect fit progress
     :seed: optional seed for random behaviour
     :processes: optional number of parallel processes to use, or None to let code choose
-    :autocor_tol: the autocorrelation tolerance
+    :autocorr_tol: the autocorrelation tolerance
     :early_stopping: stop fitting if solution has converged & further improvements are negligible
     :early_stopping_from: override the number of steps before early stopping is considered
     :progress: whether to show a progress bar (see emcee documentation for other values)
@@ -273,7 +276,7 @@ def mcmc_fit(x: _np.ndarray[float],
 
         if early_stopping_from is None or early_stopping_from <= 0:
             # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
-            early_stopping_from = int(50 * ndim * autocor_tol)
+            early_stopping_from = int(50 * ndim * autocorr_tol)
 
         if verbose:
             print("Running MCMC fit on", f"{processes}" if processes else f"up to {_cpu_count()}",
@@ -291,7 +294,7 @@ def mcmc_fit(x: _np.ndarray[float],
                 try:
                     # The autocor time (tau) is the #steps to effectively forget start position.
                     # As the fit converges the change in tau will tend towards zero.
-                    prev_tau, tau = tau, sampler.get_autocorr_time(c=5, tol=autocor_tol) * thin_by
+                    prev_tau, tau = tau, sampler.get_autocorr_time(c=5, tol=autocorr_tol) * thin_by
                     if step >= early_stopping_from \
                             and not any(_np.isnan(tau)) \
                             and all(tau < step / 100) \
@@ -306,8 +309,8 @@ def mcmc_fit(x: _np.ndarray[float],
             print(f"Halting MCMC after {step:d} steps as the walkers are past",
                   "100 times the autocorrelation time & the fit has converged.")
 
-    result = McmcResult(theta0, fit_mask, sampler, autocor_tol, thin_by)
-    theta_fit = result.get_theta()
+    result = McmcResult(theta0, fit_mask, sampler, autocorr_tol, thin_by)
+    theta_fit = result.get_theta(quantiles=(0.16, 0.5, 0.84))
     if verbose:
         _print_theta(theta_fit, fit_mask, "The MCMC fit yielded theta:  ")
     return theta_fit, result

@@ -1,27 +1,44 @@
 """ The result of an MCMC sampler 'fit' """
+from typing import Tuple as _Tuple
 import numpy as _np
+from uncertainties import UFloat as _UFloat
 from uncertainties.unumpy import uarray as _uarray
-
 from emcee import EnsembleSampler
 
 class McmcResult():
     """ The result of an MCMC sampler 'fit' """
 
     def __init__(self, theta0: _np.ndarray[float], fit_mask: _np.ndarray[bool],
-                 sampler: EnsembleSampler, autocor_tol: float, thin_by: int):
+                 sampler: EnsembleSampler, autocorr_tol: float, thin_by: int):
+        # pylint: disable=too-many-arguments, too-many-positional-arguments
         self._theta0 = theta0
         self._fit_mask = fit_mask
         self._sampler = sampler
-        self._autocor_tol = autocor_tol
+        self._autocorr_tol = autocorr_tol
         self._thin_by = thin_by
 
     @property
-    def tau_iters(self) -> int:
+    def sampler(self) -> EnsembleSampler:
+        """ The emcee sampler from which the results are calculated. """
+        return self._sampler
+
+    @property
+    def autocorr_tol(self) -> float:
+        """ The autocorrelation tolerance used. """
+        return self._autocorr_tol
+
+    @property
+    def thin_by(self) -> int:
+        """ The number of steps the samples were thinned by. """
+        return self._thin_by
+
+    @property
+    def tau_iters(self) -> _np.ndarray:
         """
         The autocorrelation (tau) iterations (steps/thin_by) for each fitted param.
         These are the estimated number of iterations to 'forget' the start position.
         """
-        return self._sampler.get_autocorr_time(c=5, tol=self._autocor_tol, quiet=True)
+        return self._sampler.get_autocorr_time(c=5, tol=self._autocorr_tol, quiet=True)
 
     @property
     def burn_in_iters(self) -> int:
@@ -48,19 +65,30 @@ class McmcResult():
         return self._sampler.get_chain(discard=discard, flat=flat)
 
     def get_theta(self,
-                  discard: int=None,
-                  uncertainty_ratio: float=0.6827) -> _np.ndarray:
+                  quantiles: _Tuple=(0.16, 0.5, 0.84),
+                  discard: int=None) -> _np.ndarray[_UFloat]:
         """
-        The resulting set of (theta) medians and uncertainties from the MCMC samples.
+        The resulting set of (theta) nominals and uncertainties from the MCMC samples.
 
+        The quantiles argument indicates the range of sample values which make up the final
+        theta values on the assumption that the samples are consistent with a normal distribution.
+        They are in the form (low, median, high) or (low, high) with the median assumed to be 0.5.
+        i.e.: quantiles of (0.16, 0.5, 0.84) will yield the median +/- 1-sigma for each theta value.
+
+        Fixed theta values will be given an uncertainty of zero.
+
+        :quantiles: the quantiles over which to summarise the samples
         :discard: number of "burn in" iters to omit from the samples, or burn_in_iters if None
-        :uncertainty_ratio: ratio of samples about median for uncertainty; default equiv to 1-sigma
         :returns: the final theta from the sample chain with +/- uncertainties for fitted values
         """
+        if isinstance(quantiles, _Tuple) and 2 <= len(quantiles) <= 3:
+            if len(quantiles) == 2:
+                quantiles = (quantiles[0], 0.5, quantiles[1])
+        else:
+            raise ValueError("quantiles must be a tuple in form (low, high) or (low, mid, high)")
+
         samples = self.get_sample_chain(discard=discard, flat=True)
-        lo, med, hi = _np.quantile(samples,
-                                   q=(0.5 - uncertainty_ratio/2, 0.5, 0.5 + uncertainty_ratio/2),
-                                   axis=0)
+        lo, med, hi = _np.quantile(samples, q=quantiles, axis=0)
 
         theta = _uarray(self._theta0, 0)
         theta[self._fit_mask] = _uarray(med, _np.mean([med-lo, hi-med], axis=0))
