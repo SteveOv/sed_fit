@@ -34,7 +34,7 @@ def get_ebv(target_coords: SkyCoord,
     :rv: the R_V value to use if it is necessary to convert Av values to E(B-V)
     """
     if funcs is None:
-        funcs = [get_bayestar_ebv, get_vergely_av, get_gontcharov_ebv]
+        funcs = [get_gontcharov_ebv, get_bayestar_ebv, get_vergely_av]
     if isinstance(funcs, str | Callable):
         funcs = [funcs]
 

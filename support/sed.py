@@ -183,8 +183,7 @@ def create_outliers_mask(sed: Table,
                          temps0: Union[Tuple[float], List[float], float]=(5000., 5000.),
                          temp_ratios: Union[Tuple[float], List[float]]=None,
                          min_unmasked: float=15,
-                         min_improvement_ratio: float=0.10,
-                         test_stat_cutoff: float=10.,
+                         min_improvement_ratio: float=0.33,
                          verbose: bool=False) -> np.ndarray[bool]:
     """
     Will create a mask indicating the farthest outliers.
@@ -196,33 +195,44 @@ def create_outliers_mask(sed: Table,
     The temp_ratios are optional as they can be inferred from temps0. However, also supported is
     supplying the primary temp0 with the initial values of the companions inferred from the ratios.
 
+    The min_unmasked arg supports three types of value from which an explicit minimum is derived:
+    - a positive value >1 is rounded and gives the absolute minimum number of SEDs to leave unmasked
+    - a fraction in the range [0, 1) is the minimum as a fraction of the initial number of SEDs
+    - negative int indicates the maximimum number of SEDs to mask, ie. -2 gives minimum = initial-2
+
     :sed: the source observations to evaluate
     :temps0: the initial temperatures to use for the test fit or a single value if ratios also given
     :temp_ratios: the ratios of the temps of the companion stars to the primary
     :min_unmasked: the minimum number of observations to leave unmasked, either as an explicit
     count (if > 1) or as a ratio of the initial number (if within (0, 1])
-    :min_improvement_ratio: minimum ratio of test stat improvement required to add to outlier_mask
-    :test_stat_cutoff: will stop iterating when the test stats gets below this value
+    :min_improvement_ratio: minimum fractional test stat improvement required to add to outlier_mask
     :verbose: whether to print progress messages or not
     :returns: a mask indicating those observations selected as outliers
     """
     # pylint: disable=too-many-locals, too-many-branches, too-many-statements
     sed_count = len(sed)
     outlier_mask = np.zeros((sed_count), dtype=bool)
-    min_unmasked = int(sed_count * min_unmasked if 0 < min_unmasked <= 1 else max(min_unmasked, 1))
+    if 0 < min_unmasked <= 1:
+        min_unmasked = sed_count * min_unmasked
+    elif min_unmasked < 0:
+        min_unmasked = sed_count + int(min_unmasked)
+    else:
+        min_unmasked = max(int(min_unmasked), 1)
     if sed_count <= min_unmasked:
         if verbose: print(f"No outliers masked as already {min_unmasked} or fewer SED rows")
         return outlier_mask
 
-    # Initial temps & associated priors
-    if not isinstance(temps0, Number) and len(temps0) > 0:
-        if temp_ratios is None: # Infer the ratios from the starting temps
-            temp_ratios = [temp_comp / temps0[0] for temp_comp in temps0[1:]]
-    elif temp_ratios is not None:
-        if isinstance(temps0, Number): # Infer starting temps from ratios
-            temps0 = [temps0] + [temps0*ratio for ratio in temp_ratios]
-    if not len(temps0) == len(temp_ratios) + 1:
+    if isinstance(temps0, Number|UFloat): # Always expect at least one temps0 value
+        temps0 = [temps0]
+    if temp_ratios is None or len(temp_ratios) == 0: # Infer temp_ratios from temps0
+        temp_ratios = [] if len(temps0) == 1 else [tcomp / temps0[0] for tcomp in temps0[1:]]
+    if len(temp_ratios) > 0 and len(temps0) == 1: # Expand temps0 from single value based on ratios
+        temps0 = [temps0[0]] + [temps0[0]*ratio for ratio in temp_ratios]
+    if len(temps0) != len(temp_ratios) + 1:
         raise ValueError("Expecting one more temps0 value than temp_ratios")
+
+    temps0 = unumpy.nominal_values(temps0)
+    temp_ratios = unumpy.nominal_values(temp_ratios)
     temp_ratios_flex = [tr * 0.05 for tr in temp_ratios]
     temp_limits = (min(temps0) * 0.75, max(temps0) * 1.25)
     if verbose:
@@ -234,6 +244,9 @@ def create_outliers_mask(sed: Table,
     x = sed["sed_freq"].to(u.Hz, equivalencies=u.spectral()).value
     y = sed["sed_flux"].to(u.Jy, equivalencies=u.spectral_density(sed["sed_wl"])).value
     y_err = sed["sed_eflux"].to(u.Jy, equivalencies=u.spectral_density(sed["sed_wl"])).value
+
+    def chi_sq_resids(y_model: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        return ((y[mask] - y_model) / (y_err[mask] + 1e-30))**2
 
     # The model func scaling is in log space, as the range is large, but it returns linear fluxes.
     y_log = log10(y)
@@ -248,7 +261,9 @@ def create_outliers_mask(sed: Table,
         if any(abs(temps[i+1] / temps[0] - temp_ratios[i]) > temp_ratios_flex[i]
                                                                 for i in range(len(temp_ratios))):
             return np.inf
-        return simple_like_func(scaled_bb_model(temps, mask), y[mask], y_err[mask])
+        # Fit posterior likelihood based on reduced chi^2 deviation from 1
+        chi_sq_i = chi_sq_resids(scaled_bb_model(temps, mask), mask)
+        return np.abs(1 - (np.sum(chi_sq_i) / (sum(mask)-len(temps))))
 
     # Iteratively fit the observations, remove the worst fitted points until fit no longer improves
     retain_mask = ~outlier_mask.copy()   # for initial/baseline fit nothing is excluded
@@ -256,7 +271,7 @@ def create_outliers_mask(sed: Table,
     for _iter in range(sed_count):
         num_retained = sum(retain_mask)
         if num_retained < min_unmasked:
-            if verbose: print(f"[{_iter:03d}] stopped as the {'next' if _iter > 1 else ''} mask",
+            if verbose: print(f"[{_iter:03d}] stopped as {'further' if _iter > 1 else ''} masking",
                         f"will reduce the number of SED rows below the minimum of {min_unmasked}.")
             break
 
@@ -276,28 +291,27 @@ def create_outliers_mask(sed: Table,
             if verbose: print(f"[{_iter:03d}] stopped as unable to get a good fit")
             break
 
-        # Calculate a summary stat on this fit.
-        fitted_temps = soln.x
-        y_model = scaled_bb_model(fitted_temps, retain_mask)
-        resids_sq = ((y[retain_mask] - y_model) / y_err[retain_mask])**2
-        test_stat = np.sum(resids_sq) / (num_retained - len(fitted_temps))
+        # Calculate a summary test stat on this fit; the reduced chi^2 = sum(chi_sq_i)/dof.
+        # A perfect fit & the stat == 1, stat << 1 indicates overfit & stat >> 1 indicates underfit.
+        chi_sq_i = chi_sq_resids(scaled_bb_model(soln.x, retain_mask), retain_mask)
+        test_stat = np.sum(chi_sq_i) / (sum(retain_mask) - len(soln.x))
 
         # After the first iter, which sets the unmasked baseline, evaluate this fit (with mask) vs
         # that of the previous iter. If it's significantly better, we adopt the mask and try again.
         if verbose: print(f"[{_iter:03d}] stat = {test_stat:.3e}", end="; " if _iter else "\n")
         if _iter > 0:
-            if test_stat > test_stat_cutoff \
-                            and prev_test_stat - test_stat > prev_test_stat * min_improvement_ratio:
+            if prev_test_stat > test_stat >= 1 \
+                    and prev_test_stat - test_stat > prev_test_stat * min_improvement_ratio:
                 outlier_mask = ~retain_mask
                 if verbose: print(f"{sum(~retain_mask)}/{sed_count} outliers masked for",
                                   ", ".join(np.unique(sed['sed_filter'][~retain_mask])))
             else:
-                if verbose: print("no significant improvement so stopped further masking")
+                if verbose: print("insufficient improvement so stopped further masking")
                 break
 
         # Create the next test mask from the current outlier mask & farthest outliers from this fit.
         # Note: the resids are only the size of the retain_mask == True, hence the double masking.
-        retain_mask[retain_mask] = ~(resids_sq == resids_sq.max())
+        retain_mask[retain_mask] = ~(chi_sq_i == chi_sq_i.max())
         prev_test_stat = test_stat
 
     return outlier_mask

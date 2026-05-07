@@ -105,7 +105,7 @@ if __name__ == "__main__":
     # Filter SED to those covered by our models and also remove any outliers
     model_mask = np.ones((len(sed)), dtype=bool)
     model_mask &= model_grid.has_filter(sed["sed_filter"])
-    model_mask &= np.isin(sed["sed_filter"], ["Cousins:I", "WISE:W4"], invert=True)
+    model_mask &= np.isin(sed["sed_filter"], ["GALEX:NUV", "Cousins:I", "WISE:W4"], invert=True)
     model_mask &= (sed["sed_wl"] >= min(ext_wl_range)) \
                 & (sed["sed_wl"] <= max(ext_wl_range)) \
                 & (sed["sed_wl"] >= min(model_grid.wavelength_range)) \
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     sed = sed[model_mask]
 
     out_mask = create_outliers_mask(sed, target_data["teff_sys"].n, [target_data["teff_ratio"].n],
-                                    min_unmasked=15, verbose=True)
+                                    min_unmasked=12, verbose=True)
     sed = sed[~out_mask]
 
     sed.sort(["sed_wl"])
