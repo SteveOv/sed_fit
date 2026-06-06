@@ -291,9 +291,9 @@ class TestBtSettlGrid(unittest.TestCase):
     #
     #   get_filter_fluxes(filters, teff, logg, metal=0, radius=None, distance=None) -> np.ndarray[float] or u.Quantity:
     #
-    def test_get_filter_fluxes_no_reddening(self):
+    def test_get_filter_fluxes_quick_mode_no_reddening(self):
         """ Tests get_filter_fluxes() with use of pre-filtered grid and interpolated values """
-        model_sed = BtSettlGrid(self._test_file)
+        model_sed = BtSettlGrid(self._test_file, use_quick_mode=True)
 
         # Known fluxes
         t5000_l40_m00 = self._get_filter_flux_values_from_flat_grid("GAIA/GAIA3:Gbp", 5000, 4.0, 0.0)
@@ -329,27 +329,26 @@ class TestBtSettlGrid(unittest.TestCase):
                 for exp_flux, flux in zip(exp_fluxes, fluxes):
                     self.assertAlmostEqual(exp_flux, flux, -3)
 
-    def test_get_filter_fluxes_with_reddening(self):
-        """ Tests get_filter_fluxes() with use of pre-filtered grid and interpolated values """
+    def test_get_filter_fluxes_non_quick_mode(self):
+        """ Tests get_filter_fluxes() without the use of pre-filtered grid and interpolated values """
         ext_model = G23(Rv=3.1)
-        model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model)
+        model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=False)
 
         # Known fluxes; a whole row from which we'll calculate the expected filtered values
         t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0)
         multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
         r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2
 
-        for filters,                teff,   logg,   metal,  rad,    dist,   av,     quick,  exp_unred_fluxes,       msg in [
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   False,  t5000_l40_m00,          "unreddened single filter"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   False,  t5000_l40_m00,          "unreddened multiple filters"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   True,   t5000_l40_m00,          "quick unreddened single filter"),
+        for filters,                teff,   logg,   metal,  rad,    dist,   av,     exp_unred_fluxes,       places, msg in [
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened single filter"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened multiple filters"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "quick unreddened single filter"),
+
             # with av specified
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    False,  t5000_l40_m00,          "reddened single filter no rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    False,  t5000_l40_m00,          "reddened multiple filters no rad/dist"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    False,  t5000_l40_m00 * r1_d10, "reddened single filter with rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    False,  t5000_l40_m00 * r1_d10, "reddened multiple filters with rad/dist"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    True,   t5000_l40_m00 * r1_d10, "quick reddened single filter with rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    True,   t5000_l40_m00 * r1_d10, "quick reddened multiple filters with rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -3,     "reddened single filter no rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -3,     "reddened multiple filters no rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened single filter with rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened multiple filters with rad/dist"),
         ]:
             with self.subTest(msg=msg):
                 if not av:
@@ -365,10 +364,51 @@ class TestBtSettlGrid(unittest.TestCase):
                                                                         model_sed.wavelengths,
                                                                         exp_red_flux)
 
-                fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av, quick)
+                fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
                 self.assertIsInstance(fluxes, np.ndarray)
                 for exp_flux, flux in zip(exp_red_flux, fluxes):
-                    self.assertAlmostEqual(exp_flux, flux, -3)
+                    self.assertAlmostEqual(exp_flux, flux, places)
+
+    def test_get_filter_fluxes_in_quick_mode(self):
+        """ Tests get_filter_fluxes() with use of pre-filtered grid and interpolated values """
+        ext_model = G23(Rv=3.1)
+        model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=True)
+
+        # Known fluxes; a whole row from which we'll calculate the expected filtered values
+        t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0)
+        multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
+        r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2
+
+        for filters,                teff,   logg,   metal,  rad,    dist,   av,     exp_unred_fluxes,       places, msg in [
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened single filter"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened multiple filters"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "quick unreddened single filter"),
+            # with av specified
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -5,     "reddened single filter no rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -6,     "reddened multiple filters no rad/dist"),
+
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened single filter with rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened multiple filters with rad/dist"),
+        ]:
+            with self.subTest(msg=msg):
+                if not av:
+                    exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
+                    exp_red_flux = self._calculate_filtered_flux_values(filters,
+                                                                        model_sed.wavelengths,
+                                                                        exp_red_flux)
+                else:
+                    wavenumbers = 1 / model_sed.wavelengths
+                    exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
+                    exp_red_flux = exp_red_flux * ext_model.extinguish(wavenumbers, av)
+                    exp_red_flux = self._calculate_filtered_flux_values(filters,
+                                                                        model_sed.wavelengths,
+                                                                        exp_red_flux)
+
+                fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
+                self.assertIsInstance(fluxes, np.ndarray)
+                for exp_flux, flux in zip(exp_red_flux, fluxes):
+                    self.assertAlmostEqual(exp_flux, flux, places)
+
 
     def test_get_filter_fluxes_unknown_filter_name(self):
         """ Tests get_filter_fluxes() with unknown filter names -> assert KeyError """
