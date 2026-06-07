@@ -243,7 +243,7 @@ class TestBtSettlGrid(unittest.TestCase):
             (5050,  4.0,    0.0,    1.0,    10.0,   t5500_l40_m00 * r1_d10, "interp' flux modified by radius & dist"),
         ]:
             with self.subTest(msg=msg):
-                flux = model_sed.get_fluxes(teff, logg, metal, radius, dist)[1000]
+                flux = model_sed.get_fluxes(model_sed.wavelengths, teff, logg, metal, radius, dist)[1000]
                 self.assertAlmostEqual(exp_flux_ix_1k, flux, 2)
 
     def test_get_fluxes_test_with_reddening(self):
@@ -271,7 +271,7 @@ class TestBtSettlGrid(unittest.TestCase):
                     wavenumbers = 1 / model_sed.wavelengths[ix_1k]
                     exp_red_flux_ix_1k = exp_unred_flux_ix_1k * ext_model.extinguish(wavenumbers, av)
 
-                flux = model_sed.get_fluxes(teff, logg, metal, radius, dist, av=av)[ix_1k]
+                flux = model_sed.get_fluxes(model_sed.wavelengths, teff, logg, metal, radius, dist, av=av)[ix_1k]
                 self.assertAlmostEqual(exp_red_flux_ix_1k, flux, 2)
 
     def test_get_fluxes_stellar_params_out_of_range(self):
@@ -285,7 +285,7 @@ class TestBtSettlGrid(unittest.TestCase):
         ]:
             with self.subTest(msg=msg):
                 with self.assertRaises(ValueError):
-                    model_sed.get_fluxes(teff, logg, metal)
+                    model_sed.get_fluxes(model_sed.wavelengths, teff, logg, metal)
 
 
     #

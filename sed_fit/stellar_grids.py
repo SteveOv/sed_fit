@@ -184,31 +184,55 @@ class StellarGrid(_AbstractBaseClass):
             ol_mask = (ol_lam_short <= filter_lam) & (filter_lam <= ol_lam_long)
 
             flux = _np.sum(_np.multiply(
-                self.get_fluxes(teff, logg, metal, radius, distance, av, filter_lam[ol_mask]),
+                self.get_fluxes(filter_lam[ol_mask], teff, logg, metal, radius, distance, av),
                 filter_table["Norm-Transmission"][ol_mask].value))
         return flux
 
-    @_abstractmethod
     def get_fluxes(self,
+                   wavelengths: _ArrayLike,
                    teff: float,
                    logg: float,
                    metal: float=0,
                    radius: float=None,
                    distance: float=None,
-                   av: float=None,
-                   wavelengths: _ArrayLike=None) -> _np.ndarray[float]:
+                   av: float=None) -> _np.ndarray[float]:
         """
-        Will return flux values for a target with the requested teff, logg, metal & (optional)
-        wavelength values, optionally modified by stellar radius/distance and extinction values.
+        Will return flux values for a target at the requested  wavelengths for the requested teff,
+        logg, metal values, optionally modified by stellar radius/distance and extinction values.
 
+        :wavelengths: array of wavelengths to get fluxes for
         :teff: the effective temperature value for the fluxes (in K)
         :logg: the logg for the fluxes
         :metal: the metallicity for the fluxes
         :radius: optional stellar radius value in R_sun
         :distance: optional stellar distance value in pc
         :av: optional A_v value with which to redden fluxes, if we also have an extinction model
-        :wavelengths: optional array of wavelengths to get fluxes for or will use the grids bins
         :returns: the resulting flux values (in implied flux_units)
+        """
+        # Get the subclass to generate the fluxes in their own special way.
+        fluxes = self._get_surface_fluxes(wavelengths, teff, logg, metal)
+
+        if radius and distance:
+            fluxes *= ((radius * self._R_sun) / (distance * self._pc))**2
+
+        if av:
+            if self.extinction_model is None:
+                raise ValueError("av specified but cannot redden without an extinction_model")
+            wavenumbers = (1 / (wavelengths << self.wavelength_unit)).to(1 / _u.um)
+            fluxes *= self.extinction_model.extinguish(wavenumbers, Av=av)
+        return fluxes
+
+    @_abstractmethod
+    def _get_surface_fluxes(self, wavelengths: _ArrayLike, teff: float, logg: float, metal: float) \
+            -> _np.ndarray[float]:
+        """
+        Called by get_fluxes() to generate the surface fluxes for the passed wavelengths and params.
+
+        :wavelengths: array of wavelengths to get fluxes for (in units of self.wavelength_unit)
+        :teff: the effective temperature value for the fluxes (in units of K)
+        :logg: the logg for the fluxes
+        :metal: the metallicity for the fluxes
+        :returns: the resulting flux values (in implied self.flux_units)
         """
 
     @classmethod
@@ -433,23 +457,9 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             flux = super().get_filter_flux(the_filter, teff, logg, metal, radius, distance, av)
         return flux
 
-    def get_fluxes(self, teff: float, logg: float, metal: float=0, radius: float=None,
-                   distance: float=None, av: float=None, wavelengths: _ArrayLike=None) \
+    def _get_surface_fluxes(self, wavelengths: _ArrayLike, teff: float, logg: float, metal: float) \
                         -> _np.ndarray[float]:
-        if wavelengths is None:
-            wavelengths = self.wavelengths
-
-        fluxes = self._model_full_interp(xi=(teff, logg, metal, wavelengths))
-
-        if radius and distance:
-            fluxes *= ((radius * self._R_sun) / (distance * self._pc))**2
-
-        if av:
-            if self.extinction_model is None:
-                raise ValueError("av specified but cannot redden without an extinction_model")
-            wavenumbers = (1 / (wavelengths << self.wavelength_unit)).to(1 / _u.um)
-            fluxes *= self.extinction_model.extinguish(wavenumbers, Av=av)
-        return fluxes
+        return self._model_full_interp(xi=(teff, logg, metal, wavelengths))
 
     @classmethod
     def make_grid_file(cls,
