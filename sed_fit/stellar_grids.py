@@ -47,15 +47,26 @@ class StellarGrid(_AbstractBaseClass):
     _pc = (1 * _u.pc).to(_u.m).value
     _R_sun = (1 * _u.R_sun).to(_u.m).value
 
-    def __init__(self, extinction_model: _BaseExtModel=None):
+    def __init__(self,
+                 wavelength_range: _Tuple[float], teff_range: _Tuple[float],
+                 logg_range: _Tuple[float], metal_range: _Tuple[float],
+                 extinction_model: _BaseExtModel=None):
         """
         Initializes a new instance of this class.
         Sets up any extinction model and the details of the supported filters.
-
+        
+        :wavelength_range: the range of supported wavelengths
+        :teff_range: the range of supported effective temperatures
+        :logg_range: the range of supported logg values
+        :metal_range: the range of supported metallicities
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
         :verbose: whether or not to output verbose status messages
         """
         super().__init__()
+        self._wavelength_range = wavelength_range
+        self._teff_range = teff_range
+        self._logg_range = logg_range
+        self._metal_range = metal_range
         self._extinction_model = extinction_model
 
         # The json has maps betweeen name of supported Vizier SED filters the corresponding SVO name
@@ -68,6 +79,26 @@ class StellarGrid(_AbstractBaseClass):
     def extinction_model(self) -> _BaseExtModel:
         """ Get the model used to apply extinction to fluxes """
         return self._extinction_model
+
+    @property
+    def wavelength_range(self) -> _Tuple[float]:
+        """ Gets the range of wavelength covered by this model (units of wavelength_unit)"""
+        return self._wavelength_range
+
+    @property
+    def teff_range(self) -> _Tuple[float]:
+        """ Gets the range of effective temperatures covered by this model (units of teff_unit) """
+        return self._teff_range
+
+    @property
+    def logg_range(self) -> _Tuple[float]:
+        """ Gets the range of logg covered by this model (units of logg_unit) """
+        return self._logg_range
+
+    @property
+    def metal_range(self) -> _Tuple[float]:
+        """ Gets the range of metallicities covered by this model """
+        return self._metal_range
 
     @property
     def teff_unit(self) -> _u.Unit:
@@ -175,7 +206,7 @@ class StellarGrid(_AbstractBaseClass):
         else:
             filter_table = self._filters[self._filter_names_list[the_filter]]
 
-        # Work out the lambda range where the filter and binned data overlap
+        # Work out the lambda range where the filter and grid data overlap
         ol_lam_short = max(min(self.wavelength_range), filter_table.meta["filter_short"].value)
         ol_lam_long = min(max(self.wavelength_range), filter_table.meta["filter_long"].value)
         if ol_lam_short < ol_lam_long: # No overlap; no flux
@@ -342,8 +373,6 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         :use_quick_mode: if True, a set of pre-filtered grids are used for quicker flux calcs
         :verbose: whether or not to output verbose status messages
         """
-        super().__init__(extinction_model)
-
         with _np.load(data_file, allow_pickle=True) as df:
             model_grid = df["model_grid"]
             meta = df["meta"].item()
@@ -351,35 +380,37 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 created = meta.get("created", "unknown")
                 print(f"Loading model grid from {data_file.name} created at {created}")
 
-        self._use_quick_mode = False # Don't set until we've completed initialization
-        self._wavelengths = meta['wavelengths']
         interp_method="slinear" if min(model_grid.shape) > 1 else "linear"
-
-        self._teff_range = (min(meta['teffs']), max(meta['teffs']))
-        self._logg_range = (min(meta['loggs']), max(meta['loggs']))
-        self._metal_range = (min(meta['metals']), max(meta['metals']))
-
         if verbose:
             print(f"{self.__class__.__name__} is initializing the fluxes interpolator with a grid",
                 f"of {len(meta['teffs'])} teff, {len(meta['loggs'])} logg & {len(meta['metals'])}",
-                f"metal values and {len(self._wavelengths)} wavelength bins", end="...", flush=True)
+                f"metal values and {len(meta['wavelengths'])} wavelength bins",end="...",flush=True)
+
+        # For reddening. The extinction model may restrict the wavelength range we can report on.
+        if extinction_model is not None:
+            wavenumbers = 1 / (meta['wavelengths'] << self.wavelength_unit).to(_u.micron).value
+            wavelength_mask = wavenumbers >= _np.min(extinction_model.x_range)
+            wavelength_mask &= wavenumbers <= _np.max(extinction_model.x_range)
+            self._wavelengths = meta['wavelengths'][wavelength_mask]
+        else:
+            self._wavelengths = meta['wavelengths']
+
+        super().__init__(wavelength_range=(self._wavelengths.min(), self._wavelengths.max()),
+                         teff_range=(meta['teffs'].min(), meta['teffs'].max()),
+                         logg_range=(meta['loggs'].min(), meta['loggs'].max()),
+                         metal_range=(meta['metals'].min(), meta['metals'].max()),
+                         extinction_model=extinction_model)
 
         # Create the single interpolator over the full grid of flux data.
         # Used for the interpolation of fluxes for given teff, logg, metal & wavelengths.
         if verbose: print(f"will use {interp_method} interpolation", end="...", flush=True)
-        index_points = (meta['teffs'], meta['loggs'], meta['metals'], self._wavelengths)
+        index_points = (meta['teffs'], meta['loggs'], meta['metals'], meta['wavelengths'])
         self._model_full_interp = _RegularGridInterpolator(index_points, model_grid, interp_method)
         if verbose: print("done.")
 
-        # For reddening. The extinction model may restrict the wavelength range we can report on.
-        if self._extinction_model is not None:
-            wavenumbers = 1 / (self._wavelengths << self.wavelength_unit).to(_u.micron).value
-            self._wavelength_mask = wavenumbers >= _np.min(self._extinction_model.x_range)
-            self._wavelength_mask &= wavenumbers <= _np.max(self._extinction_model.x_range)
-        else:
-            self._wavelength_mask = _np.ones((len(self._wavelengths)), dtype=bool)
-
         if use_quick_mode:
+            self._use_quick_mode = False # We need fully worked fluxes to set up quick mode interps
+
             # Create a table of interpolators to optimize getting filters' fluxes for given teff,
             # logg and metal values with no extinction and radius/distance modification applied.
             nfilters = len(self._filter_names_list)
@@ -410,27 +441,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
     @property
     def wavelengths(self) -> _np.ndarray:
         """ Gets the wavelength values for which unfiltered fluxes are published. """
-        return self._wavelengths[self._wavelength_mask]
-
-    @property
-    def wavelength_range(self) -> _Tuple[float]:
-        """ Gets the range of wavelength covered by this model (units of wavelength_unit)"""
-        return (self.wavelengths.min(), self.wavelengths.max())
-
-    @property
-    def teff_range(self) -> _Tuple[float]:
-        """ Gets the range of effective temperatures covered by this model (units of teff_unit) """
-        return self._teff_range
-
-    @property
-    def logg_range(self) -> _Tuple[float]:
-        """ Gets the range of logg covered by this model (units of logg_unit) """
-        return self._logg_range
-
-    @property
-    def metal_range(self) -> _Tuple[float]:
-        """ Gets the range of metallicities covered by this model """
-        return self._metal_range
+        return self._wavelengths
 
     def get_filter_flux(self,
                         the_filter: _Union[str, int],

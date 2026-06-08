@@ -96,8 +96,8 @@ class TestBtSettlGrid(unittest.TestCase):
                     & (cls._flat_grid[..., 2] == metal) \
                     & (cls._flat_grid[..., 3] == alpha)
         if flux_ix is None:
-            return cls._flat_grid[row_mask, 4:][0]
-        return cls._flat_grid[row_mask, 4 + flux_ix][0]
+            return cls._flat_lams, cls._flat_grid[row_mask, 4:][0]
+        return cls._flat_lams[flux_ix], cls._flat_grid[row_mask, 4 + flux_ix][0]
 
     @classmethod
     def _calculate_filtered_flux_values(cls, filters, lams, fluxes):
@@ -122,8 +122,7 @@ class TestBtSettlGrid(unittest.TestCase):
         Only really works for filters entirely within lambda range as no overlap logic.
         """
         # Get the whole row of fluxes and lams
-        fluxes = cls._get_flux_value_from_flat_grid(teff, logg, metal, alpha)
-        lams = cls._flat_lams
+        lams, fluxes = cls._get_flux_value_from_flat_grid(teff, logg, metal, alpha)
         return cls._calculate_filtered_flux_values(filters, lams, fluxes)
 
 
@@ -216,63 +215,62 @@ class TestBtSettlGrid(unittest.TestCase):
     #
     #   get_fluxes(teff, logg, metal=0, radius=None, distance=None, av=None) -> NDArray[float]
     #
-    def test_get_fluxes_no_reddening(self):
+    def test_get_fluxes_no_extinction_model(self):
         """ Tests get_fluxes(teff, logg, metal, radius, dist) happy path tests for combinations of values"""
         model_sed = BtSettlGrid(self._test_file)
 
         # Known values
-        t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0, flux_ix=1000)
-        t5100_l40_m00 = self._get_flux_value_from_flat_grid(5100, 4.0, 0.0, flux_ix=1000)
-        t5000_l45_m00 = self._get_flux_value_from_flat_grid(5000, 4.5, 0.0, flux_ix=1000)
-        t5000_l40_m03 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.3, flux_ix=1000)
+        flat_lam, t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0, flux_ix=1000)
+        _, t5100_l40_m00 = self._get_flux_value_from_flat_grid(5100, 4.0, 0.0, flux_ix=1000)
+        _, t5000_l45_m00 = self._get_flux_value_from_flat_grid(5000, 4.5, 0.0, flux_ix=1000)
+        _, t5000_l40_m03 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.3, flux_ix=1000)
 
         t5500_l40_m00 = (t5000_l40_m00 + t5100_l40_m00) / 2     # Approx interpolated values
         t5000_l425_m00 = (t5000_l40_m00 + t5000_l45_m00) / 2
         t5000_l40_m015 = (t5000_l40_m00 + t5000_l40_m03) / 2
 
-        r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2    # radius & distance modifier
-
-        for teff,   logg,   metal,  radius, dist,   exp_flux_ix_1k,         msg in [
-            (5000,  4.0,    0.0,    None,   None,   t5000_l40_m00,          "basic non-interpolated flux"),
+        for teff,   logg,   metal,  radius, dist,   exp_flux,       msg in [
+            (5000,  4.0,    0.0,    None,   None,   t5000_l40_m00,  "basic non-interpolated flux"),
             # Interpolation
-            (5050,  4.0,    0.0,    None,   None,   t5500_l40_m00,          "teff triggers interpolation"),
-            (5000,  4.25,   0.0,    None,   None,   t5000_l425_m00,         "logg triggers interpolation"),
-            (5000,  4.0,    0.15,   None,   None,   t5000_l40_m015,         "metal triggers interpolation"),
+            (5050,  4.0,    0.0,    None,   None,   t5500_l40_m00,  "teff triggers interpolation"),
+            (5000,  4.25,   0.0,    None,   None,   t5000_l425_m00, "logg triggers interpolation"),
+            (5000,  4.0,    0.15,   None,   None,   t5000_l40_m015, "metal triggers interpolation"),
             # radius & distance
-            (5000,  4.0,    0.0,    1.0,    10.0,   t5000_l40_m00 * r1_d10, "exact flux modified by radius & dist"),
-            (5050,  4.0,    0.0,    1.0,    10.0,   t5500_l40_m00 * r1_d10, "interp' flux modified by radius & dist"),
+            (5000,  4.0,    0.0,    1.0,    10.0,   t5000_l40_m00,  "exact flux modified by radius & dist"),
+            (5050,  4.0,    0.0,    1.0,    10.0,   t5500_l40_m00,  "interp' flux modified by radius & dist"),
         ]:
             with self.subTest(msg=msg):
-                flux = model_sed.get_fluxes(model_sed.wavelengths, teff, logg, metal, radius, dist)[1000]
-                self.assertAlmostEqual(exp_flux_ix_1k, flux, 2)
+                if radius and dist:
+                    exp_flux *= (radius * u.R_sun).to(u.m)**2 / (dist * u.pc).to(u.m)**2
+                flux = model_sed.get_fluxes([flat_lam], teff, logg, metal, radius, dist)[0]
+                self.assertAlmostEqual(exp_flux, flux, 2)
 
-    def test_get_fluxes_test_with_reddening(self):
+    def test_get_fluxes_no_extinction_model_av_given(self):
+            """ Tests get_fluxes(teff, logg, metal, av) raises ValueError when given av but no extinction model set """
+            model_sed = BtSettlGrid(self._test_file, extinction_model=None)
+            with self.assertRaises(ValueError):
+                model_sed.get_fluxes(model_sed.wavelengths, 5000, 4.0, 0.0, av=0.1)
+
+    def test_get_fluxes_test_with_extinction_model(self):
         """ Tests get_fluxes(teff, logg, metal, radius, dist, av) happy path tests for redenning """
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model)
 
         # Known values
-        t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0, flux_ix=1000)
-        r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2
-
-        # Index of 1000th flux after masking due to the ext_model restricting the wavelength range
-        ix_1k = 1000 - sum(~model_sed._wavelength_mask[:1000])
-
-        for teff,   logg,   metal,  radius, dist,   av,     exp_unred_flux_ix_1k,   msg in [
-            (5000,  4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          "basic non-reddened flux"),
-            # With Av specified
-            (5000,  4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          "apply reddening"),
-            (5000,  4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, "apply reddening with radius & dist"),
+        for teff,   logg,   metal,  radius, dist,   av,     msg in [
+            (5000,  4.0,    0.0,    None,   None,   None,   "basic non-reddened flux"),
+            (5000,  4.0,    0.0,    None,   None,   0.1,    "apply reddening"),
+            (5000,  4.0,    0.0,    1.0,    10.0,   0.1,    "apply reddening with radius & dist"),
         ]:
             with self.subTest(msg=msg):
-                if not av:
-                    exp_red_flux_ix_1k = exp_unred_flux_ix_1k
-                else:
-                    wavenumbers = 1 / model_sed.wavelengths[ix_1k]
-                    exp_red_flux_ix_1k = exp_unred_flux_ix_1k * ext_model.extinguish(wavenumbers, av)
+                flat_lam, exp_flux = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0, flux_ix=1000)
+                if radius and dist:
+                    exp_flux *= (radius * u.R_sun).to(u.m)**2 / (dist * u.pc).to(u.m)**2
+                if av:
+                    exp_flux *= ext_model.extinguish(1 / flat_lam, av)
 
-                flux = model_sed.get_fluxes(model_sed.wavelengths, teff, logg, metal, radius, dist, av=av)[ix_1k]
-                self.assertAlmostEqual(exp_red_flux_ix_1k, flux, 2)
+                flux = model_sed.get_fluxes([flat_lam], teff, logg, metal, radius, dist, av=av)[0]
+                self.assertAlmostEqual(exp_flux, flux, 2)
 
     def test_get_fluxes_stellar_params_out_of_range(self):
         """ Tests get_fluxes() with Teff, logg or metal outside the model's range -> ValueError """
@@ -330,83 +328,77 @@ class TestBtSettlGrid(unittest.TestCase):
                     self.assertAlmostEqual(exp_flux, flux, -3)
 
     def test_get_filter_fluxes_non_quick_mode(self):
-        """ Tests get_filter_fluxes() without the use of pre-filtered grid and interpolated values """
+        """ Tests get_filter_fluxes() without the use of pre-filtered grid """
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=False)
 
-        # Known fluxes; a whole row from which we'll calculate the expected filtered values
-        t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0)
         multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
-        r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2
-
-        for filters,                teff,   logg,   metal,  rad,    dist,   av,     exp_unred_fluxes,       places, msg in [
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened single filter"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened multiple filters"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "quick unreddened single filter"),
+        for filters,                teff,   logg,   metal,  rad,    dist,   av,     places, msg in [
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened single filter"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened multiple filters"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   -3,     "quick unreddened single filter"),
 
             # with av specified
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -3,     "reddened single filter no rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -3,     "reddened multiple filters no rad/dist"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened single filter with rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened multiple filters with rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    -3,     "reddened single filter no rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    -3,     "reddened multiple filters no rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    -3,     "reddened single filter with rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    -3,     "reddened multiple filters with rad/dist"),
         ]:
             with self.subTest(msg=msg):
-                if not av:
-                    exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
-                    exp_red_flux = self._calculate_filtered_flux_values(filters,
-                                                                        model_sed.wavelengths,
-                                                                        exp_red_flux)
-                else:
-                    wavenumbers = 1 / model_sed.wavelengths
-                    exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
-                    exp_red_flux = exp_red_flux * ext_model.extinguish(wavenumbers, av)
-                    exp_red_flux = self._calculate_filtered_flux_values(filters,
-                                                                        model_sed.wavelengths,
-                                                                        exp_red_flux)
+                # Known fluxes; a whole row from which we'll calculate the expected filtered values
+                flat_lams, exp_fluxes = self._get_flux_value_from_flat_grid(teff, logg, metal)
+                model_lam_mask = (flat_lams >= min(model_sed.wavelength_range)) & (flat_lams <= max(model_sed.wavelength_range))
+                exp_fluxes = exp_fluxes[model_lam_mask]
+
+                if rad and dist:
+                    exp_fluxes *= (rad * u.R_sun).to(u.m)**2 / (dist * u.pc).to(u.m)**2
+                if av:
+                    exp_fluxes *= ext_model.extinguish(1 / model_sed.wavelengths, av)
+
+                exp_fluxes = self._calculate_filtered_flux_values(filters,
+                                                                  model_sed.wavelengths,
+                                                                  exp_fluxes)
 
                 fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
                 self.assertIsInstance(fluxes, np.ndarray)
-                for exp_flux, flux in zip(exp_red_flux, fluxes):
+                for exp_flux, flux in zip(exp_fluxes, fluxes):
                     self.assertAlmostEqual(exp_flux, flux, places)
 
     def test_get_filter_fluxes_in_quick_mode(self):
-        """ Tests get_filter_fluxes() with use of pre-filtered grid and interpolated values """
+        """ Tests get_filter_fluxes() with use of pre-filtered grid """
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=True)
 
-        # Known fluxes; a whole row from which we'll calculate the expected filtered values
-        t5000_l40_m00 = self._get_flux_value_from_flat_grid(5000, 4.0, 0.0)
         multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
-        r1_d10 = (1.0 * u.R_sun).to(u.m)**2 / (10 * u.pc).to(u.m)**2
-
-        for filters,                teff,   logg,   metal,  rad,    dist,   av,     exp_unred_fluxes,       places, msg in [
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened single filter"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "unreddened multiple filters"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   t5000_l40_m00,          -3,     "quick unreddened single filter"),
+        for filters,                teff,   logg,   metal,  rad,    dist,   av,     places, msg in [
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened single filter"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened multiple filters"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   -3,     "quick unreddened single filter"),
             # with av specified
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -5,     "reddened single filter no rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    t5000_l40_m00,          -6,     "reddened multiple filters no rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    -5,     "reddened single filter no rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   0.1,    -6,     "reddened multiple filters no rad/dist"),
 
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened single filter with rad/dist"),
-            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    t5000_l40_m00 * r1_d10, -3,     "reddened multiple filters with rad/dist"),
+            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    -3,     "reddened single filter with rad/dist"),
+            (multi_gaia_filters,    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    -3,     "reddened multiple filters with rad/dist"),
         ]:
             with self.subTest(msg=msg):
-                if not av:
-                    exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
-                    exp_red_flux = self._calculate_filtered_flux_values(filters,
-                                                                        model_sed.wavelengths,
-                                                                        exp_red_flux)
-                else:
-                    wavenumbers = 1 / model_sed.wavelengths
-                    exp_red_flux = exp_unred_fluxes[model_sed._wavelength_mask]
-                    exp_red_flux = exp_red_flux * ext_model.extinguish(wavenumbers, av)
-                    exp_red_flux = self._calculate_filtered_flux_values(filters,
-                                                                        model_sed.wavelengths,
-                                                                        exp_red_flux)
+                # Known fluxes; a whole row from which we'll calculate the expected filtered values
+                flat_lams, exp_fluxes = self._get_flux_value_from_flat_grid(teff, logg, metal)
+                model_lam_mask = (flat_lams >= min(model_sed.wavelength_range)) & (flat_lams <= max(model_sed.wavelength_range))
+                exp_fluxes = exp_fluxes[model_lam_mask]
+
+                if rad and dist:
+                    exp_fluxes *= (rad * u.R_sun).to(u.m)**2 / (dist * u.pc).to(u.m)**2
+                if av:
+                    exp_fluxes *= ext_model.extinguish(1 / model_sed.wavelengths, av)
+
+                exp_fluxes = self._calculate_filtered_flux_values(filters,
+                                                                  model_sed.wavelengths,
+                                                                  exp_fluxes)
 
                 fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
                 self.assertIsInstance(fluxes, np.ndarray)
-                for exp_flux, flux in zip(exp_red_flux, fluxes):
+                for exp_flux, flux in zip(exp_fluxes, fluxes):
                     self.assertAlmostEqual(exp_flux, flux, places)
 
 
