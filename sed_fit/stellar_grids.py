@@ -3,7 +3,7 @@
 from abc import ABC as _AbstractBaseClass, abstractmethod as _abstractmethod
 from typing import Union as _Union, Tuple as _Tuple, Iterable as _Iterable, List as _List
 from pathlib import Path as _Path
-from inspect import getsourcefile as _getsourcefile
+from inspect import getsourcefile as _getsourcefile, getfullargspec as _getfullargspec
 from warnings import filterwarnings as _filterwarnings
 import re as _re
 from json import load as _json_load
@@ -692,7 +692,11 @@ def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarG
         # Avoid issubclass() as it will always be true because StellarGrid is abstract.
         raise ValueError(f"Cannot initialize the abstract class {grid_type.__name__}")
 
-    return _init_type(grid_type, **kwargs)
+    # Ignore kwargs not used by the type's __init__ otherwise we may get a TypeError. This allows
+    # calling code to send a superset of potential kwargs to this func & it will use what is needed.
+    argspec = _getfullargspec(grid_type.__init__)
+    expected_kwargs = { k: v for k, v in kwargs.items() if k in argspec.args and k not in ["self"] }
+    return _init_type(grid_type, **expected_kwargs)
 
 @_lru_cache
 def _init_type(the_type: type, **kwargs):
