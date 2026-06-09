@@ -156,6 +156,7 @@ def minimize_fit(x: _np.ndarray[float],
 
     if not _np.isfinite(ln_prior_func(theta0)):
         raise ValueError("theta0 failed ln_prior_func check.")
+    theta = theta0.copy() # Make sure we don't modify the input
 
     if methods is None:
         methods = ["Nelder-Mead", "SLSQP", None]
@@ -173,7 +174,7 @@ def minimize_fit(x: _np.ndarray[float],
 
         best_soln, best_method = None, None
         for method in methods:
-            soln = _minimize(lambda *args: -_ln_prob_func(*args), x0=theta0[fit_mask],
+            soln = _minimize(lambda *args: -_ln_prob_func(*args), x0=theta[fit_mask],
                              method=method, options={ "maxiter": max_iters, "maxfev": max_iters })
             if verbose:
                 print(f"({method})", "succeeded" if soln.success else f"failed [{soln.message}]",
@@ -186,13 +187,14 @@ def minimize_fit(x: _np.ndarray[float],
                 best_soln, best_method = soln, method
 
     if best_soln.success:
-        theta0[fit_mask] = best_soln.x
+        theta[fit_mask] = best_soln.x
         if verbose:
-            _print_theta(theta0, fit_mask, f"The best fit with {best_method} method yielded theta=")
+            _print_theta(theta, fit_mask, f"The best fit with {best_method} method yielded theta=")
     else:
         _print_theta(theta0, fit_mask, "The fit failed so returning input, theta0=")
+        theta = theta0
 
-    return theta0, best_soln
+    return theta, best_soln
 
 
 def mcmc_fit(x: _np.ndarray[float],
@@ -246,9 +248,10 @@ def mcmc_fit(x: _np.ndarray[float],
 
     if not _np.isfinite(ln_prior_func(theta0)):
         raise ValueError("theta0 failed ln_prior_func check.")
+    theta = theta0.copy() # Make sure we don't modify the input
 
     rng = _np.random.default_rng(seed)
-    theta_fit = theta0[fit_mask]
+    theta_fit = theta[fit_mask]
     ndim = len(theta_fit)
     tau = [_np.inf] * ndim
 
@@ -266,7 +269,7 @@ def mcmc_fit(x: _np.ndarray[float],
         _filterwarnings("ignore", message="invalid value encountered in ")
         _filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
 
-        _set_globals(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
+        _set_globals(x, y, y_err, theta, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
 
         if early_stopping_from is None or early_stopping_from <= 0:
             # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
@@ -306,13 +309,13 @@ def mcmc_fit(x: _np.ndarray[float],
     # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
     samples = samples_from_sampler(sampler, autocor_tol, thin_by, flat=True, verbose=verbose)
     fit_nom, quant_low, quant_high = median_and_quantile_values(samples, axis=0)
-    theta_fit = _uarray(theta0, 0)
-    theta_fit[fit_mask] = _uarray(fit_nom, _np.mean([quant_low, quant_high], axis=0))
+    theta_mcmc = _uarray(theta, 0)
+    theta_mcmc[fit_mask] = _uarray(fit_nom, _np.mean([quant_low, quant_high], axis=0))
 
     if verbose:
-        _print_theta(theta_fit, fit_mask, "The MCMC fit yielded theta:  ")
+        _print_theta(theta_mcmc, fit_mask, "The MCMC fit yielded theta:  ")
 
-    return theta_fit, sampler
+    return theta_mcmc, sampler
 
 
 def samples_from_sampler(sampler: EnsembleSampler,
