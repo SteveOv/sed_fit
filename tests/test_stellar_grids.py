@@ -72,7 +72,7 @@ class TestBtSettlGrid(unittest.TestCase):
                 flat_grid[row_ix, len(index_names):] = bin_fluxes
 
             # Save the subset of the filters in the file too
-            filter_map = { "GAIA/GAIA3:Gbp": "GAIA/GAIA3.Gbp", "GAIA/GAIA3:Grp": "GAIA/GAIA3.Grp", "Gaia:G": "GAIA/GAIA0.G" }
+            filter_map = { "GAIA/GAIA3:Gbp": "GAIA/GAIA3.Gbp", "GAIA/GAIA3:Grp": "GAIA/GAIA3.Grp", "GAIA/GAIA3:G": "GAIA/GAIA3.G" }
             filters = { viz: BtSettlGrid.get_filter(svo, BtSettlGrid._LAM_UNIT) for viz, svo in filter_map.items() }
 
             cls._flat_file.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +161,7 @@ class TestBtSettlGrid(unittest.TestCase):
             ("GAIA/GAIA3:Gbp",              True,           "test filter name is known"),
             ("GAIA/GAIA3:Gesso",            False,          "test filter name is unknown"),
             # Multiple
-            (["GAIA/GAIA3:Gbp", "Gaia:G"],  [True, True],   "test filters, both known"),
+            (["GAIA/GAIA3:Gbp", "2MASS:H"], [True, True],   "test filters, both known"),
             (["GAIA/GAIA3:Gbp", "Who?"],    [True, False],  "test filters, one unknown"),
             (["GAIA/GAIA3:Gbp"],            [True],         "test single known filter in list"),
             (np.array(["GAIA/GAIA3:Gbp"]),  [True],         "test single known filter in ndarray"),
@@ -299,7 +299,7 @@ class TestBtSettlGrid(unittest.TestCase):
         t5000_l45_m00 = self._get_filter_flux_values_from_flat_grid("GAIA/GAIA3:Gbp", 5000, 4.5, 0.0)
         t5000_l40_m03 = self._get_filter_flux_values_from_flat_grid("GAIA/GAIA3:Gbp", 5000, 4.0, 0.3)
 
-        multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
+        multi_gaia_filters = ["GAIA/GAIA3:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
         t5000_l40_m00_x3 = self._get_filter_flux_values_from_flat_grid(multi_gaia_filters, 5000, 4.0, 0.0)
 
         t5050_l40_m00 = (t5000_l40_m00 + t5100_l40_m00) / 2         # Approx interpolated values
@@ -332,7 +332,7 @@ class TestBtSettlGrid(unittest.TestCase):
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=False)
 
-        multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
+        multi_gaia_filters = ["GAIA/GAIA3:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
         for filters,                teff,   logg,   metal,  rad,    dist,   av,     places, msg in [
             (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened single filter"),
             (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened multiple filters"),
@@ -369,7 +369,7 @@ class TestBtSettlGrid(unittest.TestCase):
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=True)
 
-        multi_gaia_filters = ["Gaia:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
+        multi_gaia_filters = ["GAIA/GAIA3:G", "GAIA/GAIA3:Grp", "GAIA/GAIA3:Gbp"]
         for filters,                teff,   logg,   metal,  rad,    dist,   av,     places, msg in [
             (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened single filter"),
             (multi_gaia_filters,    5000,   4.0,    0.0,    None,   None,   None,   -3,     "unreddened multiple filters"),
