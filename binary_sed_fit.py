@@ -23,6 +23,7 @@ from deblib.stellar import log_g
 
 from support.pipeline import get_teff_from_spt
 from support.sed import get_sed_for_target, create_outliers_mask, group_and_average_fluxes
+from support.extinction import get_gontcharov_av
 
 from sed_fit.stellar_grids import get_stellar_grid
 from sed_fit import fitter
@@ -122,12 +123,13 @@ if __name__ == "__main__":
         ", ".join(f"{sed[f].unit:unicode}" for f in ["sed_flux", "sed_freq", "sed_wl"]))
 
 
-    # Deredden; specific to CM Dra
+    # Deredden
     fit_av = False
     if fit_av:
         sed["sed_der_flux"] = sed["sed_flux"]
     else:
-        av = 0.000515 / 3.1
+        av, _ = get_gontcharov_av(target_data["skycoords"])
+        print(f"\nDereddening SED observations with Av={av:.3f}")
         sed["sed_der_flux"] = sed["sed_flux"] / ext_model.extinguish(sed["sed_wl"].to(u.um), Av=av)
 
     # Set up the initial fit position. The fit mask indicates we're only fitting teffs & radii
