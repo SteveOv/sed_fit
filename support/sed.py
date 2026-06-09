@@ -1,24 +1,16 @@
 
-"""
-Low level utility functions for SED ingest, pre-processing, estimation and fitting.
-"""
+""" Low level utility functions for SED ingest, pre-processing, estimation and fitting. """
 # pylint: disable=no-member, multiple-statements
-from typing import Union, Tuple, List
-import warnings
+from typing import Tuple
 from pathlib import Path
 import re
 from urllib.parse import quote_plus
-from numbers import Number
 
 import astropy.units as u
 from astropy.table import Table, unique
 from astropy.io.votable import parse_single_table
-from uncertainties import UFloat, unumpy
 import numpy as np
-from scipy.optimize import minimize, OptimizeWarning
 
-from deblib.constants import c, h, k_B
-from deblib.vmath import exp, log10
 
 def get_sed_for_target(target: str,
                        search_term: str=None,
@@ -31,7 +23,7 @@ def get_sed_for_target(target: str,
                        verbose: bool=False) -> Table:
     """
     Gets spectral energy distribution (SED) observations for the target. These data are found and
-    downloaded from the VizieR photometry tool (see http://viz-beta.u-strasbg.fr/vizier/sed/doc/).
+    downloaded from the VizieR photometry tool (see https://vizier.cds.unistra.fr/vizier/sed/doc/).
     
     The VizieR photometry tool is developed by Anne-Camille Simon and Thomas Boch.
 
@@ -126,214 +118,3 @@ def calculate_vfv(sed: Table,
         return vfv.to(unit, equivalencies=u.spectral_density(freqs.quantity)), \
                 evfv.to(unit, equivalencies=u.spectral_density(freqs.quantity))
     return vfv, evfv
-
-
-def group_and_average_fluxes(sed: Table,
-                             group_by_colnames: List[str] = ["sed_filter", "sed_freq"],
-                             verbose: bool=False) -> Table:
-    """
-    Will group the passed SED table by the requested columns and will then set
-    the flux/flux_err columns of each group to the mean values. The resulting
-    aggregate rows will be returned as a new table.
-
-    :sed: the source SED table
-    :group_by_colnames: the columns to group on
-    :verbose: whether to output diagnostics messages
-    :returns: a new table of just the aggregate rows
-    """
-    # pylint: disable=dangerous-default-value
-    sed_grps = sed.group_by(group_by_colnames)
-    if verbose: print(f"Grouped SED by {group_by_colnames} yielding",
-                      f"{len(sed_grps.groups)} group(s) from {len(sed)} row(s).")
-
-    # Find the flux & related uncertainty columns to be aggregated
-    flux_colname_pairs = []
-    for colname in sed.colnames:
-        if colname not in group_by_colnames \
-                and not colname.startswith("_") and not colname.startswith("sed_e") \
-                and sed[colname].unit is not None and sed[colname].unit.is_equivalent(u.Jy):
-            colname_err = colname[:4] + "e" + colname[4:]
-            if colname_err in sed.colnames:
-                flux_colname_pairs += [(colname, colname_err)]
-            else:
-                flux_colname_pairs += [(colname, None)]
-
-    # Can't use the default groups.aggregate(np.mean) functionality as we need to
-    # be able to work with two columns (noms, errs) to correctly calculate the mean.
-    if verbose: print(f"Calculating the group means of the {flux_colname_pairs} columns")
-    for _, grp in zip(sed_grps.groups.keys, sed_grps.groups):
-        for flux_colname, err_colname in flux_colname_pairs:
-            if err_colname is not None:
-                # avoid mean() or np.mean() as they may trigger uncertainties' FutureWarning
-                mf = unumpy.uarray(grp[flux_colname].value, grp[err_colname].value).sum() / len(grp)
-                grp[flux_colname] = mf.nominal_value
-                grp[err_colname] = mf.std_dev
-            else:
-                grp[flux_colname] = np.mean(grp[flux_colname].values)
-
-        # if verbose:
-        #     group_col_vals = [key[group_by_colnames][ix] for ix in range(len(group_by_colnames))]
-        #     print(f"Aggregated {len(grp)} row(s) for group {group_col_vals}")
-
-    # Return only the grouped table rows (not the original rows)
-    return sed_grps[sed_grps.groups.indices[:-1]]
-
-
-def create_outliers_mask(sed: Table,
-                         temps0: Union[Tuple[float], List[float], float]=(5000., 5000.),
-                         temp_ratios: Union[Tuple[float], List[float]]=None,
-                         min_unmasked: float=15,
-                         min_improvement_ratio: float=0.10,
-                         test_stat_cutoff: float=10.,
-                         verbose: bool=False) -> np.ndarray[bool]:
-    """
-    Will create a mask indicating the farthest outliers.
-
-    Carried out by iteratively evaluating test blackbody fits on the observations, and masking
-    out the farthest/worst outliers. This continues until the fits no longer improve or further
-    masking would drop the number of remaining observations below a defined threshold.
-
-    The temp_ratios are optional as they can be inferred from temps0. However, also supported is
-    supplying the primary temp0 with the initial values of the companions inferred from the ratios.
-
-    :sed: the source observations to evaluate
-    :temps0: the initial temperatures to use for the test fit or a single value if ratios also given
-    :temp_ratios: the ratios of the temps of the companion stars to the primary
-    :min_unmasked: the minimum number of observations to leave unmasked, either as an explicit
-    count (if > 1) or as a ratio of the initial number (if within (0, 1])
-    :min_improvement_ratio: minimum ratio of test stat improvement required to add to outlier_mask
-    :test_stat_cutoff: will stop iterating when the test stats gets below this value
-    :verbose: whether to print progress messages or not
-    :returns: a mask indicating those observations selected as outliers
-    """
-    # pylint: disable=too-many-locals, too-many-branches, too-many-statements
-    sed_count = len(sed)
-    outlier_mask = np.zeros((sed_count), dtype=bool)
-    min_unmasked = int(sed_count * min_unmasked if 0 < min_unmasked <= 1 else max(min_unmasked, 1))
-    if sed_count <= min_unmasked:
-        if verbose: print(f"No outliers masked as already {min_unmasked} or fewer SED rows")
-        return outlier_mask
-
-    # Initial temps & associated priors
-    if not isinstance(temps0, Number) and len(temps0) > 0:
-        if temp_ratios is None: # Infer the ratios from the starting temps
-            temp_ratios = [temp_comp / temps0[0] for temp_comp in temps0[1:]]
-    elif temp_ratios is not None:
-        if isinstance(temps0, Number): # Infer starting temps from ratios
-            temps0 = [temps0] + [temps0*ratio for ratio in temp_ratios]
-    if not len(temps0) == len(temp_ratios) + 1:
-        raise ValueError("Expecting one more temps0 value than temp_ratios")
-    temp_ratios_flex = [tr * 0.05 for tr in temp_ratios]
-    temp_limits = (min(temps0) * 0.75, max(temps0) * 1.25)
-    if verbose:
-        print("Will find outliers by based on quick BB fits with initial Teff(s) = ["
-              + ", ".join(f"{t:.3f}" for t in temps0) + "] & Teff ratio priors = ["
-              + ", ".join(f"{r:.3f}" for r in temp_ratios) + "]+/-5%")
-
-    # Prepare the x, y & y_err data for the model & objective funcs which access these data directly
-    x = sed["sed_freq"].to(u.Hz, equivalencies=u.spectral()).value
-    y = sed["sed_flux"].to(u.Jy, equivalencies=u.spectral_density(sed["sed_wl"])).value
-    y_err = sed["sed_eflux"].to(u.Jy, equivalencies=u.spectral_density(sed["sed_wl"])).value
-
-    # The model func scaling is in log space, as the range is large, but it returns linear fluxes.
-    y_log = log10(y)
-    def scaled_bb_model(temps, mask):
-        y_model_log = log10(np.sum([blackbody_flux(x[mask], t) for t in temps], 0)) + 26 # to Jy
-        return 10**(y_model_log + np.median(y_log[mask] - y_model_log))
-
-    # The minimize target func; checks temps against priors, calls the model func and evals the fit
-    def objective_func(temps, mask) -> float:
-        if not all(temp_limits[0] <= t <= temp_limits[1] for t in temps):
-            return np.inf
-        if any(abs(temps[i+1] / temps[0] - temp_ratios[i]) > temp_ratios_flex[i]
-                                                                for i in range(len(temp_ratios))):
-            return np.inf
-        return simple_like_func(scaled_bb_model(temps, mask), y[mask], y_err[mask])
-
-    # Iteratively fit the observations, remove the worst fitted points until fit no longer improves
-    retain_mask = ~outlier_mask.copy()   # for initial/baseline fit nothing is excluded
-    prev_test_stat = np.inf
-    for _iter in range(sed_count):
-        num_retained = sum(retain_mask)
-        if num_retained < min_unmasked:
-            if verbose: print(f"[{_iter:03d}] stopped as the {'next' if _iter > 1 else ''} mask",
-                        f"will reduce the number of SED rows below the minimum of {min_unmasked}.")
-            break
-
-        # Perform fits on the target fluxes which are still retained, retaining the best fit
-        soln = None
-        with warnings.catch_warnings(category=RuntimeWarning|OptimizeWarning):
-            warnings.filterwarnings("ignore", message="invalid value encountered in subtract")
-            warnings.filterwarnings("ignore", message="Unknown solver options")
-            for method in ["Nelder-Mead", "SLSQP"]:
-                this_soln = minimize(objective_func, x0=temps0, args=retain_mask,
-                                     method=method, options={ "maxiter": 5000, "maxfev": 5000 })
-                if soln is None \
-                        or (not soln.success and this_soln.success) or (soln.fun > this_soln.fun):
-                    soln = this_soln
-
-        if soln is None or not soln.success:
-            if verbose: print(f"[{_iter:03d}] stopped as unable to get a good fit")
-            break
-
-        # Calculate a summary stat on this fit.
-        fitted_temps = soln.x
-        y_model = scaled_bb_model(fitted_temps, retain_mask)
-        resids_sq = ((y[retain_mask] - y_model) / y_err[retain_mask])**2
-        test_stat = np.sum(resids_sq) / (num_retained - len(fitted_temps))
-
-        # After the first iter, which sets the unmasked baseline, evaluate this fit (with mask) vs
-        # that of the previous iter. If it's significantly better, we adopt the mask and try again.
-        if verbose: print(f"[{_iter:03d}] stat = {test_stat:.3e}", end="; " if _iter else "\n")
-        if _iter > 0:
-            if test_stat > test_stat_cutoff \
-                            and prev_test_stat - test_stat > prev_test_stat * min_improvement_ratio:
-                outlier_mask = ~retain_mask
-                if verbose: print(f"{sum(~retain_mask)}/{sed_count} outliers masked for",
-                                  ", ".join(np.unique(sed['sed_filter'][~retain_mask])))
-            else:
-                if verbose: print("no significant improvement so stopped further masking")
-                break
-
-        # Create the next test mask from the current outlier mask & farthest outliers from this fit.
-        # Note: the resids are only the size of the retain_mask == True, hence the double masking.
-        retain_mask[retain_mask] = ~(resids_sq == resids_sq.max())
-        prev_test_stat = test_stat
-
-    return outlier_mask
-
-
-def blackbody_flux(freq: Union[float, UFloat, np.ndarray[float], np.ndarray[UFloat]],
-                   temp: Union[float, UFloat],
-                   radius: float=1.) -> np.ndarray[float]:
-    """
-    Calculates the Blackbody / Planck function fluxes of a body of the requested temperature [K]
-    at the requested frequencies [Hz] over an area defined by the radius in arcseconds.
-
-    The fluxes are given in units of W / m^2 / Hz. Multiply them 1e26 for the equivalent in Jy.
- 
-    :freq: the frequency/ies in Hz
-    :temp: the temperature in K
-    :radius: the area radius in arcseconds
-    :returns: the blackbody fluxes at freq, in W / m^2 / Hz
-    """
-    area = 2 * np.pi * (radius / 206265)**2 # radius in arcsec where 206265 arcsec = 1 rad
-    part1 = 2 * h * freq**3 / c**2
-    part2 = exp((h * freq) / (k_B * temp)) - 1
-    return area * part1 / part2
-
-
-def simple_like_func(y_model: np.ndarray, y: np.ndarray, y_err: np.ndarray) -> float:
-    """
-    A very simple like function which compares y_model with y +/- y_err with
-
-    like = 1/2 * Σ((y - y_model) / (y_err + 10^-30))^2
-
-    where the addition of 10^-30 to y_err is to prevent division by zero errors
-
-    :y_model: the model y data points
-    :y: the equivalent observation y data points
-    :y_err: the equivalent uncertatinties in y
-    :returns: the likeness of the model to the data
-    """
-    return 0.5 * np.sum(((y - y_model) / (y_err + 1e-30))**2)

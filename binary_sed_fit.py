@@ -1,5 +1,5 @@
 """ Module fitting SED with binary star models """
-# pylint: disable=no-member, line-too-long, wrong-import-position
+# pylint: disable=no-member, line-too-long, wrong-import-position, protected-access
 from pathlib import Path
 import json
 import re
@@ -22,7 +22,7 @@ from deblib.constants import M_sun, R_sun
 from deblib.stellar import log_g
 
 from support.pipeline import get_teff_from_spt
-from support.sed import get_sed_for_target, create_outliers_mask, group_and_average_fluxes
+from support.sed import get_sed_for_target
 from support.extinction import get_gontcharov_av
 
 from sed_fit.stellar_grids import get_stellar_grid
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # Let's get the Gaia DR3 data on this here object
     gaia_dr3_id = target_data["ids"][target_data["ids"]["type"] == "Gaia DR3"]["id"][0]
-    if _job := Gaia.launch_job(f"SELECT TOP 1 * FROM gaiadr3.gaia_source WHERE source_id = {gaia_dr3_id}"):
+    if _job := Gaia.launch_job(f"SELECT TOP 1 * FROM gaiadr3.gaia_source_lite WHERE source_id = {gaia_dr3_id}"):
         _tbl = _job.get_results()
         target_data["parallax_mas"] = ufloat(_tbl["parallax"][0], _tbl["parallax_error"][0])
         target_data["skycoords"] = _coords = SkyCoord(ra=_tbl["ra"][0] * u.deg,
@@ -97,28 +97,21 @@ if __name__ == "__main__":
     ext_wl_range = np.reciprocal(ext_model.x_range) * u.um # x_range has implicit units of 1/micron
 
     # BtSettlGrid & KuruczGrid available with the former having better coverage but slower/larger
-    model_grid = get_stellar_grid("BtSettlGrid", extinction_model=ext_model, verbose=True)
+    model_grid = get_stellar_grid("BtSettlGrid",
+                                  extinction_model=ext_model, use_quick_mode=True, verbose=True)
 
-    # Read in the SED for this target and de-duplicate (measurements may appear multiple times).
-    sed = get_sed_for_target(TARGET, target_data["search_term"], radius=0.1, remove_duplicates=True)
-    sed = group_and_average_fluxes(sed, verbose=True)
-
-    # Filter SED to those covered by our models and also remove any outliers
+    # Read in the SED for this target and de-duplicate. Then filter on model & exclusions.
+    print()
+    sed = get_sed_for_target(TARGET, target_data["search_term"], radius=0.1,
+                             remove_duplicates=True, verbose=True)
     model_mask = np.ones((len(sed)), dtype=bool)
     model_mask &= model_grid.has_filter(sed["sed_filter"])
-    model_mask &= np.isin(sed["sed_filter"], ["Cousins:I", "WISE:W4"], invert=True)
-    model_mask &= (sed["sed_wl"] >= min(ext_wl_range)) \
-                & (sed["sed_wl"] <= max(ext_wl_range)) \
-                & (sed["sed_wl"] >= min(model_grid.wavelength_range)) \
+    model_mask &= np.isin(sed["sed_filter"], [], invert=True)
+    model_mask &= (sed["sed_wl"] >= min(model_grid.wavelength_range)) \
                 & (sed["sed_wl"] <= max(model_grid.wavelength_range))
     sed = sed[model_mask]
-
-    out_mask = create_outliers_mask(sed, target_data["teff_sys"].n, [target_data["teff_ratio"].n],
-                                    min_unmasked=15, verbose=True)
-    sed = sed[~out_mask]
-
     sed.sort(["sed_wl"])
-    print(f"{len(sed)} unique SED observation(s) retained after range, filter & outlier filtering",
+    print(f"{len(sed)} unique SED observation(s) retained after range & exclusion filtering",
             "\nwith the units for flux, frequency and wavelength being",
         ", ".join(f"{sed[f].unit:unicode}" for f in ["sed_flux", "sed_freq", "sed_wl"]))
 
@@ -195,22 +188,67 @@ if __name__ == "__main__":
         return -0.5 * ret_val
 
     # Get the sed data to be fitted
+    retain_mask = np.ones((len(sed)), dtype=bool)
     x = model_grid.get_filter_indices(sed["sed_filter"])
     y = (sed["sed_der_flux"].quantity * sed["sed_freq"].quantity)\
                                     .to(model_grid.flux_unit, equivalencies=u.spectral()).value
     y_err = (sed["sed_eflux"].quantity * sed["sed_freq"].quantity)\
                                     .to(model_grid.flux_unit, equivalencies=u.spectral()).value
 
-    # Quick initial minimize fit
-    print()
-    theta_min, _ = fitter.minimize_fit(x, y, y_err, theta0, fit_mask, verbose=True,
-                                        ln_prior_func=ln_prior_func, stellar_grid=model_grid)
+    # Minimize fits to do outlier filtering and optionally give a reasonable starting pos for MCMC
+    print("\nPerforming 'quick' minimize fits to mask outliers.")
+    min_to_retain, improve_rate = int(np.ceil(len(sed) * 0.6)), 0.2
+    prev_stat, test_mask = np.inf, retain_mask.copy()
+    theta_min = None
+    print(f"Outliers are masked where doing so improves fit stat >={improve_rate:.0%}")
+    for out_ix in range(len(sed)):
+        test_theta_min, result = fitter.minimize_fit(x[test_mask],
+                                                     y[test_mask],
+                                                     y_err[test_mask],
+                                                     theta0=theta0,
+                                                     fit_mask=fit_mask,
+                                                     stellar_grid=model_grid,
+                                                     ln_prior_func=ln_prior_func,
+                                                     verbose=False)
 
-    # MCMC fit, starting from where the minimize fit finished
+        if out_ix == 0: # Fallback position
+            theta_min = test_theta_min
+
+        if (num_retained := sum(test_mask)) <= min_to_retain:
+            print(f"[{out_ix:03d}] stopped as {'further' if out_ix else ''} masking",
+                    f"will leave the SED rows below the minimum of {min_to_retain}.")
+            break
+
+        stat = result.fun
+        print(f"[{out_ix:03d}] stat = {stat:.3e}", end="; " if out_ix else "\n")
+        if out_ix > 0:
+            if stat > 0.1 and prev_stat - stat > prev_stat * improve_rate:
+                print(f"{sum(test_mask)}/{len(test_mask)} obervations retained.",
+                        "Excluded:", ", ".join(sed['sed_filter'][~test_mask]))
+                theta_min, retain_mask = test_theta_min, test_mask.copy()
+            else:
+                print("insufficient improvement so stopped further masking")
+                break
+
+        # The next test mask is the current mask & farthest outlier from this fit.
+        y_mdl = fitter.model_func(test_theta_min, x[test_mask], model_grid, combine=True)
+        max_res_ix = np.argmax(((y_mdl - y[test_mask]) / y_err[test_mask])**2)
+        test_mask[test_mask.nonzero()[0][max_res_ix]] = False
+        prev_stat = stat
+
+    fitter._print_theta(theta_min, fit_mask,
+                        f"Minimize fit, retaining {sum(retain_mask)} fluxes, yielded theta_min=")
+
+    # MCMC sampling of the masked SED
     print()
-    theta_mcmc, _ = fitter.mcmc_fit(x, y, y_err, theta_min, fit_mask,
-                                     ln_prior_func=ln_prior_func, stellar_grid=model_grid,
-                                     processes=8, early_stopping=True, progress=True, verbose=True)
+    theta_mcmc, _ = fitter.mcmc_fit(x[retain_mask],
+                                    y[retain_mask],
+                                    y_err[retain_mask],
+                                    theta0,
+                                    fit_mask,
+                                    ln_prior_func=ln_prior_func,
+                                    stellar_grid=model_grid,
+                                    processes=8, early_stopping=True, progress=True, verbose=True)
 
     # Output a comparison with known values (assuming we've fitted teffs and radii)
     print(f"\nFinal parameters for {TARGET} with nominals & 1-sigma error bars from MCMC fit")
