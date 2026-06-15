@@ -125,7 +125,7 @@ if __name__ == "__main__":
         print(f"\nDereddening SED observations with Av={av:.3f}")
         sed["sed_der_flux"] = sed["sed_flux"] / ext_model.extinguish(sed["sed_wl"].to(u.um), Av=av)
 
-    # Set up the initial fit position. The fit mask indicates we're only fitting teffs & radii
+    # Set up the initial fit position. The fit mask indicates we're only fitting teffs, radii & dist
     print("\nSetting up data for fitting")
     NUM_STARS = 2
     theta0 = fitter.create_theta(teffs=[target_data["teff_sys"].n] * NUM_STARS,
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     fit_mask = np.array([True] * NUM_STARS      # Teff
                         + [False] * NUM_STARS   # logg
                         + [True] * NUM_STARS    # radius
-                        + [False]               # dist
+                        + [True]                # dist
                         + [fit_av])             # av
 
     teff_limits = model_grid.teff_range
@@ -152,7 +152,7 @@ if __name__ == "__main__":
                                                        target_data["k"].s))] * (NUM_STARS - 1)
 
     # Distance & AV priors - only effect the outcome if these are fitted
-    dist_prior = ufloat(theta0[-2], theta0[-2] * 0.05)
+    dist_prior = 1000 / target_data["parallax_mas"]
     av_prior = ufloat(theta0[-1], theta0[-1] * 0.1)
 
     print(f"Priors:  Teff ratios={', '.join(f'{r:.3f}' for r in teff_ratios[1:])},",
@@ -170,7 +170,8 @@ if __name__ == "__main__":
         """
         teffs = theta[0 : NUM_STARS]
         radii = theta[2*NUM_STARS : 2*NUM_STARS + NUM_STARS]
-        dist, av = theta[-2], theta[-1]
+        dist = theta[-2]
+        # av = theta[-1]
 
         # Limit criteria checks - hard pass/fail on these
         if not all(teff_limits[0] <= t <= teff_limits[1] for t in teffs) or \
@@ -180,10 +181,10 @@ if __name__ == "__main__":
         # Gaussian prior criteria: g(x) = 1/(σ*sqrt(2*pi)) * exp(-1/2 * (x-µ)^2/σ^2)
         # Omitting scaling expressions and note the implicit ln() cancelling the exp()
         ret_val = 0
-        for ix in range(1, NUM_STARS): # Ratios
-            ret_val += ((teffs[ix]/teffs[0] - teff_ratios[ix].n) / teff_ratios[ix].s)**2
-            ret_val += ((radii[ix]/radii[0] - rad_ratios[ix].n) / rad_ratios[ix].s)**2
-        # ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
+        for c in range(1, NUM_STARS): # Ratios
+            ret_val += ((teffs[c]/teffs[0] - teff_ratios[c].n) / teff_ratios[c].s)**2
+            ret_val += ((radii[c]/radii[0] - rad_ratios[c].n) / rad_ratios[c].s)**2
+        ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
         # ret_val += ((av - av_prior.n) / av_prior.s)**2
         return -0.5 * ret_val
 
