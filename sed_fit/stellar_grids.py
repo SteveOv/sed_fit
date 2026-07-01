@@ -71,7 +71,7 @@ class StellarGrid(_AbstractBaseClass):
 
         # The json has maps betweeen name of supported Vizier SED filters the corresponding SVO name
         with open(StellarGrid._DEF_FILTER_MAP_FILE, "r", encoding="utf8") as j:
-            self._filters = { viz: self.get_filter(svo, self._LAM_UNIT)
+            self._filters = { viz: self.get_filter(svo, self._LAM_UNIT, extinction_model)
                                                             for viz, svo in _json_load(j).items() }
             self._filter_names_list = list(self._filters.keys())
 
@@ -214,9 +214,13 @@ class StellarGrid(_AbstractBaseClass):
             filter_lam = filter_table["Wavelength"].quantity.value
             ol_mask = (ol_lam_short <= filter_lam) & (filter_lam <= ol_lam_long)
 
-            flux = _np.sum(_np.multiply(
-                self.get_fluxes(filter_lam[ol_mask], teff, logg, metal, radius, distance, av),
-                filter_table["Norm-Transmission"][ol_mask].value))
+            fluxes = self.get_fluxes(filter_lam[ol_mask], teff, logg, metal, radius, distance, av=0)
+            if av:
+                # Optimisation for filters, use cached Ax/Av ratios for the filter's set of lams
+                if "axav" not in filter_table.meta:
+                    raise ValueError("av specified but cannot redden without an extinction_model")
+                fluxes *= _np.power(10, -0.4 * filter_table.meta["axav"][ol_mask] * av)
+            flux = _np.sum(_np.multiply(fluxes, filter_table["Norm-Transmission"][ol_mask].value))
         return flux
 
     def get_fluxes(self,
@@ -267,15 +271,18 @@ class StellarGrid(_AbstractBaseClass):
         """
 
     @classmethod
-    def get_filter(cls, svo_name: str, lambda_unit: _u.Unit) -> _Table:
+    def get_filter(cls, svo_name: str, lambda_unit: _u.Unit, extinction_model: _BaseExtModel=None) \
+                        -> _Table:
         """
         Downloads and caches the requested filter from the SVO. Returns a table of the filter's
         Wavelength and Transmission fields, and adds a Norm-Transmission column.
         Will also add meta entries for filter_short, filter_long and filter_mid to record
-        the wavelength range covered by the filter.
+        the wavelength range covered by the filter and, if an extinction model is supplied, also
+        axav and mid_axav items with extinction curve Ax/Av ratios at the filter's wavelengths.
 
         :svo_name: the unique name of the filter given by the SVO
         :lambda_unit: the wavelength unit for the Wavelength column
+        :extinction_model: the extinction model being used with this filter
         :returns: and astropy Table with Wavelength, Transmission and Norm-Transmission columns
         """
         filter_cache_dir = cls._CACHE_DIR / ".filters/"
@@ -297,11 +304,18 @@ class StellarGrid(_AbstractBaseClass):
         # Add metadata on the filter coverage
         if table["Wavelength"].unit != lambda_unit:
             table["Wavelength"] = table["Wavelength"].to(lambda_unit, equivalencies=_u.spectral())
+        table.sort("Wavelength")
+
         table.meta["filter_short"] = _np.min(table["Wavelength"].quantity)
         table.meta["filter_long"] = _np.max(table["Wavelength"].quantity)
         table.meta["filter_mid"] = _np.median(table["Wavelength"].quantity)
 
-        table.sort("Wavelength")
+        # These are cached Ax/Av ratios for the chosen extinction model. They're surprisingly
+        # expensive to get but remain fixed across the filter so we'll cache them here.
+        if extinction_model:
+            table.meta["axav"] = extinction_model(1 / table["Wavelength"].quantity.to(_u.um))
+            table.meta["mid_axav"] = extinction_model(1 / table.meta["filter_mid"].to(_u.um))
+
         return table
 
     @classmethod
@@ -415,8 +429,8 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             # logg and metal values with no extinction and radius/distance modification applied.
             nfilters = len(self._filter_names_list)
             if verbose: print(f"Initializing unreddened fluxes for {nfilters} filters", end="")
-            self._model_interps = _np.empty((nfilters, ),
-                                            [("filter", "<U50"),("mid", float),("interp", object)])
+            self._filter_interps = _np.empty((nfilters, ),
+                                        [("filter", "<U50"),("mid_axav", float),("interp", object)])
             index_points = (meta['teffs'], meta['loggs'], meta['metals'])
             fluxes_shape = model_grid.shape[:-1]  # no wavelengths
             for filter_ix, (filter_name, filter_table) in enumerate(self._filters.items()):
@@ -428,9 +442,9 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                     mix = _np.where(meta['metals'] == metal)
                     fluxes[tix, lix, mix] = self.get_filter_flux(filter_name, teff, logg, metal)
 
-                self._model_interps[filter_ix] = (
+                self._filter_interps[filter_ix] = (
                     filter_name,
-                    filter_table.meta["filter_mid"].to(_u.um).value,
+                    filter_table.meta.get("mid_axav", 1),
                     _RegularGridInterpolator(index_points, fluxes, interp_method)
                 )
 
@@ -453,15 +467,20 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                         av: float=None) -> float:
         flux = 0
         if self._use_quick_mode:
+            if isinstance(the_filter, str):
+                the_filter = self.get_filter_indices(the_filter)[0]
+            interp_row = self._filter_interps[the_filter]
+
             # Approx: radius/dist & ext calcs applied to single total flux from filter interpolator
-            flux = self._model_interps[the_filter]["interp"](xi=(teff, logg, metal))
+            flux = interp_row["interp"](xi=(teff, logg, metal))
             if radius and distance:
                 flux *= ((radius * self._R_sun) / (distance * self._pc))**2
             if av:
                 if self.extinction_model is None:
                     raise ValueError("av specified but cannot redden without an extinction_model")
-                wavenumber = 1/self._model_interps[the_filter]["mid"] * (1/_u.um)
-                flux *= self.extinction_model.extinguish(wavenumber, Av=av)
+                # A copy of eqn within dust_extinction BaseExtModel.extinguish() to give fractional
+                # extinction, and using a cached copy of the filter's mid Ax/Av (<-- big speed up).
+                flux *= _np.power(10.0, -0.4 * interp_row["mid_axav"] * av)
         else:
             # Fall back to the more expensive, full calculations. These call get_fluxes() and will
             # then apply any radius, distance and extinction calcs to all fluxes before summing.
