@@ -124,13 +124,13 @@ def plot_fitted_model(sed: Table,
                    [sed[sed_flux_colname].quantity, np.sum(comp_fluxes, axis=0)] +list(comp_fluxes),
                    [sed[sed_flux_err_colname].quantity, None] + [None]*nstars,
                    ["ob", ".k"] + list(_cycle_for(comp_fmts, nstars)),
-                   ["dereddened SED", "fitted pair"] +[f"fitted star {i+1}" for i in range(nstars)],
+                   ["observations", "fitted pair"] +[f"fitted star {i+1}" for i in range(nstars)],
                    **format_kwargs)
 
     # Plot the raw spectra for each component as a background
     spec_lams = model_grid.wavelengths * model_grid.wavelength_unit
-    mask = spec_lams >= sed[sed_lambda_colname].quantity.min()
-    mask &= spec_lams <= sed[sed_lambda_colname].quantity.max()
+    mask = spec_lams >= sed[sed_lambda_colname].quantity.min() * 0.8
+    mask &= spec_lams <= sed[sed_lambda_colname].quantity.max() * 1.2
     for (teff, logg, rad, dist, av), c in zip(iterate_theta(theta_noms),
                                               _cycle_for(comp_colors, nstars)):
         spec_flux = model_grid.get_fluxes(wavelengths=model_grid.wavelengths, teff=teff, logg=logg,
