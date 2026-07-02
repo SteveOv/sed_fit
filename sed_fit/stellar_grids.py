@@ -217,9 +217,9 @@ class StellarGrid(_AbstractBaseClass):
             fluxes = self.get_fluxes(filter_lam[ol_mask], teff, logg, metal, radius, distance, av=0)
             if av:
                 # Optimisation for filters, use cached Ax/Av ratios for the filter's set of lams
-                if "axav" not in filter_table.meta:
+                if self.extinction_model is None:
                     raise ValueError("av specified but cannot redden without an extinction_model")
-                fluxes *= _np.power(10, -0.4 * filter_table.meta["axav"][ol_mask] * av)
+                fluxes *= _np.power(10, -0.4 * filter_table["axav"][ol_mask] * av)
             flux = _np.sum(_np.multiply(fluxes, filter_table["Norm-Transmission"][ol_mask].value))
         return flux
 
@@ -313,8 +313,8 @@ class StellarGrid(_AbstractBaseClass):
         # These are cached Ax/Av ratios for the chosen extinction model. They're surprisingly
         # expensive to get but remain fixed across the filter so we'll cache them here.
         if extinction_model:
-            table.meta["axav"] = extinction_model(1 / table["Wavelength"].quantity.to(_u.um))
-            table.meta["mid_axav"] = extinction_model(1 / table.meta["filter_mid"].to(_u.um))
+            table["axav"] = extinction_model(1 / table["Wavelength"].quantity.to(_u.um))
+            table.meta["axav_mid"] = extinction_model(1 / table.meta["filter_mid"].to(_u.um))
 
         return table
 
@@ -430,7 +430,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             nfilters = len(self._filter_names_list)
             if verbose: print(f"Initializing unreddened fluxes for {nfilters} filters", end="")
             self._filter_interps = _np.empty((nfilters, ),
-                                        [("filter", "<U50"),("mid_axav", float),("interp", object)])
+                                        [("filter", "<U50"),("axav_mid", float),("interp", object)])
             index_points = (meta['teffs'], meta['loggs'], meta['metals'])
             fluxes_shape = model_grid.shape[:-1]  # no wavelengths
             for filter_ix, (filter_name, filter_table) in enumerate(self._filters.items()):
@@ -444,7 +444,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
 
                 self._filter_interps[filter_ix] = (
                     filter_name,
-                    filter_table.meta.get("mid_axav", 1),
+                    filter_table.meta.get("axav_mid", 1),
                     _RegularGridInterpolator(index_points, fluxes, interp_method)
                 )
 
@@ -480,7 +480,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                     raise ValueError("av specified but cannot redden without an extinction_model")
                 # A copy of eqn within dust_extinction BaseExtModel.extinguish() to give fractional
                 # extinction, and using a cached copy of the filter's mid Ax/Av (<-- big speed up).
-                flux *= _np.power(10.0, -0.4 * interp_row["mid_axav"] * av)
+                flux *= _np.power(10.0, -0.4 * interp_row["axav_mid"] * av)
         else:
             # Fall back to the more expensive, full calculations. These call get_fluxes() and will
             # then apply any radius, distance and extinction calcs to all fluxes before summing.
