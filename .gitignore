@@ -210,3 +210,5 @@ __marimo__/
 .vscode
 .sed_fit
 .cache
+
+drop/
