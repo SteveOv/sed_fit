@@ -7,6 +7,7 @@ import re
 from urllib.parse import quote_plus
 
 import astropy.units as u
+from astropy.coordinates import SkyCoord
 from astropy.table import Table, unique
 from astropy.io.votable import parse_single_table
 import numpy as np
@@ -41,7 +42,7 @@ def get_sed_for_target(target: str,
     :radius: the search radius in arcsec
     :missing_uncertainty_rate: uncertainty, as a ratio of the fluxes, to apply where none recorded
     :remove_duplicates: if True, only the first row for each combination of sed_filter, sed_freq,
-    sed_flux and sed_eflux will be included in the returned table
+    sed_flux, sed_eflux and coordinates will be included in the returned table
     :flux_unit: the unit of the returned sed_flux field (must support conversion from u.Jy)
     :freq_unit: the unit of the returned sed_freq field
     :wl_unit: the unit of the returned sed_wl field
@@ -84,10 +85,29 @@ def get_sed_for_target(target: str,
         sed["sed_freq"].convert_unit_to(freq_unit, equivalencies=u.spectral())
 
     if remove_duplicates:
-        sed = unique(sed, keys=["sed_filter", "sed_freq", "sed_flux", "sed_eflux"], keep="first")
+        sed = unique(sed, keep="first",
+                     keys=["sed_filter","sed_freq","sed_flux","sed_eflux","_RAJ2000","_DEJ2000"])
         ucount = len(sed)
         if verbose: print(f"Dropped {rcount-ucount} duplicate(s) leaving {ucount} unique row(s).")
         sed.sort(["sed_freq"], reverse=True)
+    return sed
+
+
+def retain_only_closest_observations(sed: Table, target_coords: SkyCoord) -> Table:
+    """
+    Will parse the passed SED table and add a dist_r column for the angular distance of each
+    observation from the target's coordinates. With this, the SED table will be updated to leave
+    only the closest observation to the target for each sed_filter within the table.
+
+    :sed: the SED table to filter
+    :target_coordinates: the target's coordinates
+    :returns: the revised SED table, sorted on the sed_wl field
+    """
+    sed["dist_r"] = np.sqrt((target_coords.ra.to(u.deg).value - sed['_RAJ2000'])**2
+                            + (target_coords.dec.to(u.deg).value - sed['_DEJ2000'])**2)
+    sed.sort(["sed_filter", "dist_r"])
+    sed = unique(sed, keys=["sed_filter"], keep="first")
+    sed.sort(["sed_wl"])
     return sed
 
 

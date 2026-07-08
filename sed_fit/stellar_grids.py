@@ -423,12 +423,13 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         if verbose: print("done.")
 
         if use_quick_mode:
+            if verbose: print("The use of quick mode requested so will set up pre-filtered fluxes.")
             self._use_quick_mode = False # We need fully worked fluxes to set up quick mode interps
 
             # Create a table of interpolators to optimize getting filters' fluxes for given teff,
             # logg and metal values with no extinction and radius/distance modification applied.
             nfilters = len(self._filter_names_list)
-            if verbose: print(f"Initializing unreddened fluxes for {nfilters} filters", end="")
+            if verbose: print(f"Initializing pre-filtered fluxes for {nfilters} filters", end="")
             self._filter_interps = _np.empty((nfilters, ),
                                         [("filter", "<U50"),("axav_mid", float),("interp", object)])
             index_points = (meta['teffs'], meta['loggs'], meta['metals'])
