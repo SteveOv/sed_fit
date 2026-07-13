@@ -129,6 +129,16 @@ def plot_fitted_model(sed: Table,
 
     # Plot the raw spectra for each component as a background
     if show_combined_spectrum or show_component_spectra:
+        vfv_unit = u.W / u.m**2
+        def plot_spec(lams, flux, color, alpha, zorder=-100):
+            freqs = lams.to(u.Hz, equivalencies=u.spectral())
+            flux *= model_grid.flux_unit
+            if flux.unit.is_equivalent(vfv_unit):
+                vfv = (flux).to(vfv_unit, equivalencies=u.spectral_density(freqs))
+            else:
+                vfv = (flux * freqs).to(vfv_unit, equivalencies=u.spectral_density(freqs))
+            ax.plot(lams, vfv, c=color, alpha=alpha, zorder=zorder)
+                
         spec_lams = model_grid.wavelengths * model_grid.wavelength_unit
         mask = spec_lams >= sed[sed_lambda_colname].quantity.min() * 0.8
         mask &= spec_lams <= sed[sed_lambda_colname].quantity.max() * 1.2
@@ -139,11 +149,9 @@ def plot_fitted_model(sed: Table,
                                               logg=logg, metal=0, radius=rad, distance=dist, av=av)
             comb_spec_flux += spec_flux
             if show_component_spectra:
-                ax.plot(spec_lams[mask], spec_flux[mask] * model_grid.flux_unit,
-                        c=c, alpha=0.25, zorder=-100)
+                plot_spec(spec_lams[mask], spec_flux[mask], c, 0.25)
         if show_combined_spectrum:
-            ax.plot(spec_lams[mask], comb_spec_flux[mask] * model_grid.flux_unit,
-                    c=comb_color, alpha=0.75, zorder=-100)
+            plot_spec(spec_lams[mask], comb_spec_flux[mask], comb_color, 0.75)
         ax.set(xscale="log", xlabel=xlabel, yscale="log", ylabel=ylabel)
 
     if show_grid:
