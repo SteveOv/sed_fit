@@ -65,7 +65,7 @@ def get_sed_for_target(target: str,
             try:
                 c = quote_plus(search_term or target)
                 sed = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={c}&-c.rs={radius}")
-                sed.write(sed_fname, format="votable") #votable matches that published in link above
+                sed.write(sed_fname, format="votable", overwrite=True)
             except TimeoutError as e:
                 if attempt >= max_attempts:
                     raise e
