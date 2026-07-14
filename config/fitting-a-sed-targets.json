@@ -61,7 +61,8 @@
         "k": 0.888,             "k_err": 0.016,
         "J": 1.0178,            "J_err": 0.0008,
         "3L": 0.0334,           "3L_err": 0.0061,
-        "period": 9.65295307,   "period_err": 0.00000029
+        "period": 9.65295307,   "period_err": 0.00000029,
+        "ebv": 0.44,            "ebv_err": 0.05
     },
     "IQ Per": {
         "search_term": "V* IQ Per",
