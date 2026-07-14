@@ -259,7 +259,8 @@
         "k": 0.6292,            "k_err": 0.0069,
         "J": 0.816,             "J_err": 0.032,
         "3L": 0.036,            "3L_err": 0.023,
-        "period": 9.945120,     "period_err": 0.000073
+        "period": 9.945120,     "period_err": 0.000073,
+        "sed_filter_exclusions": ["GALEX:NUV"]
     },
     "V362 Pav": {
         "search_term": "V* V362 Pav",
