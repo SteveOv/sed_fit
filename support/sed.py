@@ -5,6 +5,7 @@ from typing import Tuple
 from pathlib import Path
 import re
 from urllib.parse import quote_plus
+from time import sleep
 
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -21,6 +22,7 @@ def get_sed_for_target(target: str,
                        flux_unit=u.W / u.m**2 / u.Hz,
                        freq_unit=u.Hz,
                        wl_unit=u.micron,
+                       retries: int=2,
                        verbose: bool=False) -> Table:
     """
     Gets spectral energy distribution (SED) observations for the target. These data are found and
@@ -46,6 +48,7 @@ def get_sed_for_target(target: str,
     :flux_unit: the unit of the returned sed_flux field (must support conversion from u.Jy)
     :freq_unit: the unit of the returned sed_freq field
     :wl_unit: the unit of the returned sed_wl field
+    :retries: the number of retries if we get time outs when calling the VizieR SED service
     :verbose: whether to output diagnostics messages
     :returns: an astropy Table containing the chosen data, sorted by descending frequency
     """
@@ -57,12 +60,20 @@ def get_sed_for_target(target: str,
     sed_fname = sed_cache_dir / (re.sub(r"[^\w\d-]", "-", target.lower()) + f"-{radius}.vot")
     if not sed_fname.exists():
         if verbose: print(f"Table {sed_fname.name} not cached so will query the VizieR SED service")
-        try:
-            targ = quote_plus(search_term or target)
-            sed = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={targ}&-c.rs={radius}")
-            sed.write(sed_fname, format="votable") # votable matches that published in link above
-        except ValueError as err:
-            raise ValueError(f"No SED for target={target} and search_term={search_term}") from err
+        max_attempts = 1 + max(0, retries)
+        for attempt in range(1, max_attempts+1):
+            try:
+                c = quote_plus(search_term or target)
+                sed = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={c}&-c.rs={radius}")
+                sed.write(sed_fname, format="votable") #votable matches that published in link above
+            except TimeoutError as e:
+                if attempt >= max_attempts:
+                    raise e
+                if verbose:
+                    print("The VizieR service timed out. Will re-query after a brief pause.")
+                sleep(attempt * 3) # s
+            except ValueError as e:
+                raise ValueError(f"No SED for target={target} and search_term={search_term}") from e
 
     # Read first/only table in votable & parse into a stock astropy Table (more consistent to use)
     sed = parse_single_table(sed_fname).to_table()
