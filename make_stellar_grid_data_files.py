@@ -17,10 +17,18 @@ def quick_test_stellar_grid_lookup(sgrid: StellarGrid) -> Path:
     print(f"\nRanges: teff={sgrid.teff_range} {sgrid.teff_unit:unicode},",
           f"logg={sgrid.logg_range} {sgrid.logg_unit:unicode}, metal = {sgrid.metal_range}")
 
-    qteff = min(sgrid.teff_range)
-    print(f"Test flux for 'GAIA/GAIA3:Gbp' filter, teff={qteff}, logg=4.0, metal=0, alpha=0:",
-          ", ".join(f"{f:.3f}" for f in sgrid.get_filter_fluxes(["GAIA/GAIA3:Gbp"], qteff, 4, 0)),
-          f"[{sgrid.flux_unit:unicode}]")
+    for (teff,                      logg,                   rad,        dist) in [
+        (min(sgrid.teff_range),     4.0,                    None,       None),
+        (max(sgrid.teff_range),     4.0,                    None,       None),
+        (6000.0,                    min(sgrid.logg_range),  1.0,        100.0),
+        (6000.0,                    max(sgrid.logg_range),  1.0,        100.0),
+        (5750.0,                    4.0,                    1.0,        100.0),
+    ]:
+        print( "Flux for filter 'GAIA/GAIA3:Gbp',",
+              f"teff={teff}, logg={logg}, metal=0, alpha=0, R={rad}, dist={dist}:",
+              f"{sgrid.get_filter_fluxes(['GAIA/GAIA3:Gbp'], teff, logg, 0, rad, dist)[0]:.6e}",
+              f"{sgrid.flux_unit:unicode}")
+
 
 if __name__ == "__main__":
     #
@@ -38,7 +46,7 @@ if __name__ == "__main__":
 
     BtSettlGrid.make_grid_file(in_files, data_file)
 
-    quick_test_stellar_grid_lookup(BtSettlGrid(data_file, verbose=True))
+    quick_test_stellar_grid_lookup(BtSettlGrid(data_file, use_quick_mode=False, verbose=True))
 
     #
     # Kurucz Grid
@@ -55,4 +63,4 @@ if __name__ == "__main__":
 
     KuruczGrid.make_grid_file(in_files, data_file)
 
-    quick_test_stellar_grid_lookup(KuruczGrid(data_file, verbose=True))
+    quick_test_stellar_grid_lookup(KuruczGrid(data_file, use_quick_mode=False, verbose=True))
