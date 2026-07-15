@@ -497,7 +497,8 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                        source_files: _Iterable,
                        out_file: _Path,
                        grid_nbins: int=None,
-                       grid_lam_range: _Tuple=None):
+                       grid_lam_range: _Tuple=None,
+                       grid_lam_sub_range: _Tuple=None):
         """
         Will ingest the chosen ascii grid files, previously downloaded from the SVO Theoretical
         Spectra service, to produce a grid file containing the grids of fluxes and associated
@@ -512,6 +513,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         :out_file: the model file to write (overwriting any existing file)
         :grid_nbins: the number of binned fluxes to store per row, or None for no re-binning
         :grid_lam_range: wavelength range (to, from) of the grid [micron], or None for no re-binning
+        :grid_lam_sub_range: subset range (to, from) of grid_lam_range to use, or None for all
         """
         # Need the files in sorted list as we go through more than once & the order may set indices.
         source_files = sorted(source_files)
@@ -532,6 +534,17 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             print("Binning not requested so will use the published fluxes directly")
             grid_bin_lams = cls._get_common_wavelengths(source_files, cls._LAM_UNIT)
             grid_nbins = len(grid_bin_lams)
+
+        # This is an option for creating a smaller data grid which gives the same results, within
+        # its range, as the full grid as the spacing will be the same within the subset range.
+        if grid_lam_sub_range:
+            print(f"Selecting a subset of the bins within {grid_lam_sub_range} {cls._LAM_UNIT}.")
+            grid_bin_mask = (min(grid_lam_sub_range) * cls._LAM_UNIT <= grid_bin_lams) \
+                          & (grid_bin_lams <= max(grid_lam_sub_range) * cls._LAM_UNIT)
+            grid_bin_lams = grid_bin_lams[grid_bin_mask]
+            grid_nbins = len(grid_bin_lams)
+            print(f"Will now produce a grid for only the {grid_nbins} bins within the subset.")
+
         grid_bin_freqs = grid_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
 
         # Now set up the multi-D index array and the target bin fluxes grid which we will populate
@@ -664,8 +677,8 @@ class BtSettlGrid(SvoStellarGrid):
 
     @classmethod
     def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE,
-                       grid_nbins: int=5000, grid_lam_range: _Tuple=(0.05, 50.)):
-        SvoStellarGrid.make_grid_file(source_files, out_file, grid_nbins, grid_lam_range)
+                       grid_nbins: int=5000, grid_lam_range: _Tuple=(0.05, 50.), **kwargs):
+        SvoStellarGrid.make_grid_file(source_files, out_file, grid_nbins, grid_lam_range, **kwargs)
 
 
 class KuruczGrid(SvoStellarGrid):
@@ -677,9 +690,9 @@ class KuruczGrid(SvoStellarGrid):
         super().__init__(data_file, extinction_model, use_quick_mode, verbose)
 
     @classmethod
-    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE):
+    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE, **kwargs):
         # pylint: disable=arguments-differ
-        SvoStellarGrid.make_grid_file(source_files, out_file, None, None)
+        SvoStellarGrid.make_grid_file(source_files, out_file, **kwargs)
 
 
 def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarGrid:
