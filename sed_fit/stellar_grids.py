@@ -267,8 +267,7 @@ class StellarGrid(_AbstractBaseClass):
         if av:
             if self.extinction_model is None:
                 raise ValueError("av specified but cannot redden without an extinction_model")
-            wavenumbers = (1 / (wavelengths << self.wavelength_unit)).to(1 / _u.um)
-            fluxes *= self.extinction_model.extinguish(wavenumbers, Av=av)
+            fluxes *= self.extinction_model.extinguish(wavelengths << self.wavelength_unit, Av=av)
         return fluxes
 
     @_abstractmethod
