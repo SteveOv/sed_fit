@@ -12,7 +12,7 @@ This will install the fitter module, the pre-built stellar grids and any require
 libraries. With this setup you will be able to perform both minimize and mcmc fitting of
 SED observations against the pre-build stellar grids.
 
-While the [fitting-a-sed-new.ipynb](../main/fitting-a-sed-new.ipynb) jupyter page is not
+While the [binary_sed_fit.ipynb](../main/binary_sed_fit.ipynb) jupyter page is not
 installed as part of the package, it can be viewed directly on GitHub where it offers
 a useful tutorial on using the fitter and model grids.
 
