@@ -2,6 +2,7 @@
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches, too-many-statements
 from typing import Tuple, List, Union
 from itertools import cycle
+from numbers import Number
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -51,7 +52,8 @@ def plot_sed(x: u.Quantity,
     :returns: the final Figure
     """
     fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
-    plot_sed_on_axes(ax, x, fluxes, flux_errs, fmts, fillstyles, labels)
+    plot_sed_on_axes(ax, x, fluxes, flux_errs,
+                     fmts, fillstyles=fillstyles, marker_sizes=7.5, labels=labels)
 
     ax.set(xscale="log", xlabel=f"Wavelength ({u.um:latex_inline})",
            yscale="log", ylabel=f"${{\\rm \\nu F(\\nu)}}$ ({u.W/u.m**2:latex_inline})")
@@ -71,6 +73,7 @@ def plot_fitted_model(sed: Table,
                       sed_lambda_colname: str="sed_wl",
                       show_component_spectra: bool = True,
                       show_combined_spectrum: bool=False,
+                      show_combined_fit: bool=True,
                       show_legend: bool=True,
                       show_grid: bool=True,
                       figsize: Tuple[float, float]=(6, 4),
@@ -91,45 +94,48 @@ def plot_fitted_model(sed: Table,
     :sed_filter_colname: name of the sed's filter column
     :sed_lambda_colname: name of the sed's wavelength column
     :show_component_spectra: include a low alpha plot of the spectrum for each component
-    :show_combined_spectrum: include a low alpha plot of the combined spectrum for the system
+    :show_combined_spectrum: include a plot of the combined spectrum for the system
+    :show_combined_fit: include plots of the combined fitted values for the system
     :format_kwargs: kwargs to be passed on to format_axes()
     :returns: the final Figure
     """
     # Generate model SED fluxes at points x for each set of component star params in theta
     x = model_grid.get_filter_indices(sed[sed_filter_colname])
     theta_noms = nominal_values(theta)
-    comp_fluxes = model_func(theta_noms, x, model_grid, combine=False) * model_grid.flux_unit
+    model_fluxes = model_func(theta_noms, x, model_grid, combine=False) * model_grid.flux_unit
 
     # Need a set of plot formats/colours to cover reasonable number of components
-    comp_fmts = ["or", "or", "*g", "+m"]
-    comp_fillstyles = ["full", "none", "full", "full"]
-    comp_colors = ["r", "r", "g", "m"]
-    obs_color, comb_color = "k", "b" # colours of the observations and combined fitted model
+    star_fmts = ["og", "og", "*k", "+m"]
+    star_fillstyles = ["full", "none", "full", "full"]
+    star_colors = ["g", "g", "k", "m"]
+    obs_color, comb_color = "r", "b" # colours of the observations and combined fitted model
 
-    nstars = comp_fluxes.shape[0]
+    nstars = model_fluxes.shape[0]
     if show_legend:
         labels = ["fitted pair", "observations"] + [f"fitted star {i+1}" for i in range(nstars)]
     else:
         labels = [None] * (2 + nstars)
 
+    vfv_unit = u.W / u.m**2
     xlabel = f"Wavelength ({u.um:latex_inline})"
-    ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({u.W/u.m**2:latex_inline})"
+    ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({vfv_unit:latex_inline})"
     lam = sed[sed_lambda_colname].to(u.um, equivalencies=u.spectral())
-    combined_model_flux = np.sum(comp_fluxes, axis=0)
+    comb_model_flux = np.sum(model_fluxes, axis=0)
 
     # Plot the fitted model against the chosen SED + show each star's contribution
     fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
+    slc = slice(None) if show_combined_fit else slice(1, None)
     plot_sed_on_axes(ax,
-                    x=lam,
-                    fluxes=[combined_model_flux, sed[sed_flux_colname].quantity] +list(comp_fluxes),
-                    flux_errs=[None, sed[sed_flux_err_colname].quantity] + [None]*nstars,
-                    fmts=["." + comb_color, "*" + obs_color] + list(_cycle_for(comp_fmts, nstars)),
-                    fillstyles=["full", "full"] + list(_cycle_for(comp_fillstyles, nstars)),
-                    labels=labels)
+            x=lam,
+            fluxes=([comb_model_flux, sed[sed_flux_colname].quantity] + list(model_fluxes))[slc],
+            flux_errs=([None, sed[sed_flux_err_colname].quantity] + [None]*nstars)[slc],
+            fmts=(["." + comb_color, "o" + obs_color] + list(_cycle_for(star_fmts, nstars)))[slc],
+            fillstyles=(["full", "full"] + list(_cycle_for(star_fillstyles, nstars)))[slc],
+            marker_sizes=3,
+            labels=labels[slc])
 
     # Plot the raw spectra for each component as a background
     if show_combined_spectrum or show_component_spectra:
-        vfv_unit = u.W / u.m**2
         def plot_spec(lams, flux, color, alpha, zorder=-100):
             freqs = lams.to(u.Hz, equivalencies=u.spectral())
             flux *= model_grid.flux_unit
@@ -137,14 +143,14 @@ def plot_fitted_model(sed: Table,
                 vfv = (flux).to(vfv_unit, equivalencies=u.spectral_density(freqs))
             else:
                 vfv = (flux * freqs).to(vfv_unit, equivalencies=u.spectral_density(freqs))
-            ax.plot(lams, vfv, c=color, alpha=alpha, zorder=zorder)
-                
+            ax.plot(lams, vfv, c=color, alpha=alpha, lw=0.75, zorder=zorder)
+
         spec_lams = model_grid.wavelengths * model_grid.wavelength_unit
         mask = spec_lams >= sed[sed_lambda_colname].quantity.min() * 0.8
         mask &= spec_lams <= sed[sed_lambda_colname].quantity.max() * 1.2
         comb_spec_flux = np.zeros_like(model_grid.wavelengths, dtype=float)
         for (teff, logg, rad, dist, av), c in zip(iterate_theta(theta_noms),
-                                                _cycle_for(comp_colors, nstars)):
+                                                _cycle_for(star_colors, nstars)):
             spec_flux = model_grid.get_fluxes(wavelengths=model_grid.wavelengths, teff=teff,
                                               logg=logg, metal=0, radius=rad, distance=dist, av=av)
             comb_spec_flux += spec_flux
@@ -164,9 +170,11 @@ def plot_fitted_model(sed: Table,
 def plot_sed_on_axes(ax: _Axes,
                      x: u.Quantity,
                      fluxes: List[u.Quantity],
-                     flux_errs: List[u.Quantity]=None,
-                     fmts: List[str]=None,
+                     flux_errs: List[u.Quantity],
+                     fmts: List[str],
                      fillstyles: Union[List[str], str]="full",
+                     marker_sizes: Union[List[float], float]=5.0,
+                     alphas: Union[List[float], float]=0.75,
                      labels: List[str]=None):
     """
     Will plot a sed to the passed axes. The data and axes will be coerced to units of
@@ -181,6 +189,7 @@ def plot_sed_on_axes(ax: _Axes,
     :flux_errs: optional corresponding flux error bars (must have same dimensions as fluxes)
     :fmts: fmt options for each set of fluxes or leave as None for default 
     :fillstyles: fillstyle option for each set of fluxes or leave as None for full
+    :sizes: the marker sizes for each set of fluxes
     :labels: optional labels for the fluxes
     """
     if isinstance(fluxes, u.Quantity):
@@ -193,12 +202,17 @@ def plot_sed_on_axes(ax: _Axes,
         fillstyles = [fillstyles] * len(fluxes)
     if isinstance(labels, str):
         labels = [labels] + [None] * len(fluxes)-1
+    if isinstance(marker_sizes, Number):
+        marker_sizes = [marker_sizes] * len(fluxes)
+    if isinstance(alphas, Number):
+        alphas = [alphas] * len(fluxes)
 
     vfv_unit = u.W / u.m**2
     lam = x.to(u.um, equivalencies=u.spectral())
     freq = x.to(u.Hz, equivalencies=u.spectral())
 
-    for flux, flux_err, fmt, fs, label in zip(fluxes, flux_errs, fmts, fillstyles, labels):
+    for flux, flux_err, fmt, fs, ms, alpha, label \
+            in zip(fluxes, flux_errs, fmts, fillstyles, marker_sizes, alphas, labels):
         vfv, vfv_err = None, None
         if flux is not None:
             if flux.unit.is_equivalent(vfv_unit):
@@ -212,7 +226,8 @@ def plot_sed_on_axes(ax: _Axes,
                 vfv_err = (freq * flux_err).to(vfv_unit, equivalencies=u.spectral_density(freq))
 
         if vfv is not None:
-            ax.errorbar(lam, vfv, vfv_err, fmt=fmt, fillstyle=fs, alpha=0.5, label=label)
+            ax.errorbar(lam, vfv, vfv_err, fmt=fmt, fillstyle=fs, ms=ms,
+                        mew=0.75, elinewidth=0.75, alpha=alpha, label=label)
 
     ax.set(xscale="log", xlabel=f"Wavelength [{u.um:latex_inline}]",
            yscale="log", ylabel=f"${{\\rm \\nu F(\\nu)}}$ [{u.W/u.m**2:latex_inline}]")

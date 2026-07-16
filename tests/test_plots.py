@@ -1,5 +1,5 @@
-""" Unit tests for the plots module. """
-# pylint: disable=line-too-long, protected-access, no-member, too-many-locals, too-many-arguments
+""" Tests for the plots module. """
+# pylint: disable=line-too-long, protected-access, no-member, too-many-locals, too-many-arguments, unused-variable
 import unittest
 import json
 
@@ -7,13 +7,14 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 import matplotlib.pyplot as plt
+from dust_extinction.parameter_averages import G23
 
 from sed_fit.stellar_grids import get_stellar_grid
 from support.sed import get_sed_for_target, retain_only_closest_observations
-from support.plots import plot_sed, plot_fitted_model 
+from support.plots import plot_sed, plot_fitted_model
 
 class Testplots(unittest.TestCase):
-
+    """ Tests for the plots module. """
     @classmethod
     def setUpClass(cls):
         """ Initialize the class. """
@@ -23,9 +24,8 @@ class Testplots(unittest.TestCase):
     @unittest.skip("Comment this out to run this interactive test")
     def test_plot_sed(self):
         """ Interactive test for easily running/testing plot_sed() """
-        sed = get_sed_for_target("CW CMa", "V* CW CMa",
-                                 radius=0.25, remove_duplicates=True, verbose=True)
-        
+        sed = get_sed_for_target("CW CMa", "V* CW CMa", radius=0.25, remove_duplicates=True, verbose=True)
+
         coords = SkyCoord(ra=110.4688392 * u.deg, dec=-23.7937069397 * u.deg)
         sed = retain_only_closest_observations(sed, coords)
 
@@ -46,26 +46,30 @@ class Testplots(unittest.TestCase):
                        title="CW CMa SED")
         plt.show(block=True)
 
-    @unittest.skip("Comment this out to run this interactive test")
+    # @unittest.skip("Comment this out to run this interactive test")
     def test_plot_fitted_model(self):
         """ Interactive test for easily running/testing plot_fitted_model() """
-        sed = get_sed_for_target("CW CMa", "V* CW CMa",
-                         radius=0.25, remove_duplicates=True, verbose=True)
-        
+        # Also a handy option for reproducing the plot for fully fitted CW CMa
+        sed = get_sed_for_target("CW CMa", "V* CW CMa", radius=0.25, remove_duplicates=True, verbose=True)
+
         coords = SkyCoord(ra=110.4688392 * u.deg, dec=-23.7937069397 * u.deg)
         sed = retain_only_closest_observations(sed, coords)
 
-        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
+        stellar_grid = get_stellar_grid("BtSettlGrid", extinction_model=G23(Rv=3.1), use_quick_mode=False)
 
         # Exclusions for range and filters (either unknown or known & problematic)
+        # and outliers which will have been excluded by the pruning algo.
+        outliers = ["PAN-STARRS/PS1:i", "PAN-STARRS/PS1:y", "PAN-STARRS/PS1:r"]
         model_mask = stellar_grid.has_filter(sed["sed_filter"])
         model_mask &= np.isin(sed["_tabname"], ["B/denis/denis"], invert="True")
+        model_mask &= np.isin(sed["sed_filter"], outliers, invert="True")
         model_mask &= (sed["sed_wl"] >= min(stellar_grid.wavelength_range)) \
                     & (sed["sed_wl"] <= max(stellar_grid.wavelength_range))
         sed = sed[model_mask]
 
         fig = plot_fitted_model(sed=sed,
-                                theta=(9881, 9600, 4.227, 4.253, 1.842, 1.739, 336.012, 0),
+                                # Only nominals of final fitted parameters are needed
+                                theta=(9847.723, 9569.339, 4.227, 4.253, 1.842, 1.739, 336.073, 0.320),
                                 model_grid=stellar_grid,
                                 sed_flux_colname="sed_flux",
                                 sed_flux_err_colname="sed_eflux",
@@ -73,7 +77,9 @@ class Testplots(unittest.TestCase):
                                 sed_lambda_colname="sed_wl",
                                 show_component_spectra=False,
                                 show_combined_spectrum=True,
+                                show_combined_fit=False,
                                 show_legend=False,
                                 show_grid=False,
                                 figsize=(6, 4))
+        # fig.savefig("./drop/cw-cma-fitted-sed.pdf")
         plt.show(block=True)
