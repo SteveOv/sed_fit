@@ -336,9 +336,9 @@ class StellarGrid(_AbstractBaseClass):
 
     @classmethod
     def _bin_fluxes(cls,
-                    wavelengths: _ArrayLike,
-                    fluxes: _ArrayLike,
-                    bin_midpoints: _ArrayLike) -> _u.Quantity:
+                    wavelengths: _u.Quantity,
+                    fluxes: _u.Quantity,
+                    bin_midpoints: _u.Quantity) -> _u.Quantity:
         """
         Will calculate and return the means of the fluxes within each of the requested bins.
 
