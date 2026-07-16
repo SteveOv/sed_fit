@@ -9,8 +9,8 @@ of your own base or custom python virtual environment:
 $ pip install git+https://github.com/SteveOv/sed_fit
 ```
 This will install the fitter module, the pre-built stellar grids and any required support
-libraries. With this setup you will be able to perform both minimize and mcmc fitting of
-SED observations against the pre-build stellar grids.
+libraries. With this setup you will be able to perform both minimize fitting and mcmc
+sampling of SED observations against the pre-built stellar grids.
 
 While the [binary_sed_fit.ipynb](../main/binary_sed_fit.ipynb) jupyter page is not
 installed as part of the package, it can be viewed directly on GitHub where it offers
@@ -35,7 +35,7 @@ Then run the following to set up the required packages:
 $ pip install -r requirements.txt
 ```
 You may need to install the jupyter kernel in the new venv if you wish to run
-[fitting-a-sed-new.ipynb](../main/fitting-a-sed-new.ipynb):
+[binary_sed_fit.ipynb](../main/binary_sed_fit.ipynb):
 ```sh
 $ ipython kernel install --user --name=.sed_fit
 ```
