@@ -373,6 +373,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                  data_file: _Path,
                  extinction_model: _BaseExtModel=None,
                  use_quick_mode: bool=True,
+                 interp_method: str=None,
                  verbose: bool=False):
         """
         Initializes a new instance of this class.
@@ -382,9 +383,14 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         simplify the filtered flux calculations as we will be working with a total pre-filtered flux
         value per filter, to which optional radius, distance and exinction calculations are applied.
 
-        :data_file: the source of the model data, in numpy npz format
+        Documentation on Scipy RegularGridInterpolator
+        https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.RegularGridInterpolator.html
+
+        :data_file: the source of the model data, in numpy npz format, or None to use default file
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
         :use_quick_mode: if True, a set of pre-filtered grids are used for quicker flux calcs
+        :interp_method: the method used by the interpolators (see scipy doc for options) or leave as
+        None to let the class choose
         :verbose: whether or not to output verbose status messages
         """
         with _np.load(data_file, allow_pickle=True) as df:
@@ -394,7 +400,9 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 created = meta.get("created", "unknown")
                 print(f"Loading model grid from {data_file.name} created at {created}")
 
-        interp_method="slinear" if min(model_grid.shape) > 1 else "linear"
+        if interp_method is None:
+            interp_method="slinear" if min(model_grid.shape) > 1 else "linear"
+
         if verbose:
             print(f"{self.__class__.__name__} is initializing the fluxes interpolator with a grid",
                 f"of {len(meta['teffs'])} teff, {len(meta['loggs'])} logg & {len(meta['metals'])}",
@@ -669,28 +677,28 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
 
 class BtSettlGrid(SvoStellarGrid):
     """ Generates model SED fluxes from pre-built grid of bt-settl-agss model fluxes. """
-    _DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/bt-settl/bt-settl-agss.npz"
+    DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/bt-settl/bt-settl-agss.npz"
 
-    def __init__(self, data_file: _Path=_DEF_DATA_FILE, extinction_model: _BaseExtModel=None,
-                 use_quick_mode: bool=True, verbose: bool=False):
-        super().__init__(data_file, extinction_model, use_quick_mode, verbose)
+    def __init__(self, data_file: _Path=DEF_DATA_FILE, extinction_model: _BaseExtModel=None,
+                 use_quick_mode: bool=True, interp_method: str=None, verbose: bool=False):
+        super().__init__(data_file, extinction_model, use_quick_mode, interp_method, verbose)
 
     @classmethod
-    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE,
+    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=DEF_DATA_FILE,
                        grid_nbins: int=5000, grid_lam_range: _Tuple=(0.05, 50.), **kwargs):
         SvoStellarGrid.make_grid_file(source_files, out_file, grid_nbins, grid_lam_range, **kwargs)
 
 
 class KuruczGrid(SvoStellarGrid):
     """ Generates model SED fluxes from pre-built grid of Kurucz ODFNEW /NOVER fluxes. """
-    _DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/kurucz/kurucz-odfnew-nover.npz"
+    DEF_DATA_FILE = SvoStellarGrid._this_dir / "data/stellar_grids/kurucz/kurucz-odfnew-nover.npz"
 
-    def __init__(self, data_file: _Path=_DEF_DATA_FILE, extinction_model: _BaseExtModel=None,
-                 use_quick_mode: bool=True, verbose: bool=False):
-        super().__init__(data_file, extinction_model, use_quick_mode, verbose)
+    def __init__(self, data_file: _Path=DEF_DATA_FILE, extinction_model: _BaseExtModel=None,
+                 use_quick_mode: bool=True, interp_method: str=None, verbose: bool=False):
+        super().__init__(data_file, extinction_model, use_quick_mode, interp_method, verbose)
 
     @classmethod
-    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=_DEF_DATA_FILE, **kwargs):
+    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=DEF_DATA_FILE, **kwargs):
         # pylint: disable=arguments-differ
         SvoStellarGrid.make_grid_file(source_files, out_file, **kwargs)
 

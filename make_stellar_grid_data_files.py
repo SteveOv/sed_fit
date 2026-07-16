@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # - decompress the archive contents into the ../.cache/.modelgrids/bt-settl-agss/ dir
     print()
     in_files = sorted((Path.cwd() / ".cache/.modelgrids/bt-settl-agss/").glob("lte*.dat.txt"))
-    data_file = BtSettlGrid._DEF_DATA_FILE
+    data_file = BtSettlGrid.DEF_DATA_FILE
 
     BtSettlGrid.make_grid_file(in_files, data_file)
 
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     # - decompress the archive contents into the ../.cache/.modelgrids/kurucz-odfnew-nover/ dir
     print()
     in_files = sorted((Path.cwd() / ".cache/.modelgrids/kurucz-odfnew-nover/").glob("*.fl.dat.txt"))
-    data_file = KuruczGrid._DEF_DATA_FILE
+    data_file = KuruczGrid.DEF_DATA_FILE
 
     KuruczGrid.make_grid_file(in_files, data_file)
 
