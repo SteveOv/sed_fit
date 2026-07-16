@@ -35,7 +35,7 @@ class TestBtSettlGrid(unittest.TestCase):
         # This is a BtSettlGrid model file with a limited range of test teff, logg, metal & alpha values
         if not cls._test_file.exists():
             print(f"{cls.__name__}.setUpClass() test data file '{cls._test_file}' not found so will attempt to create it")
-            BtSettlGrid.make_grid_file(in_files, cls._test_file)
+            BtSettlGrid.make_grid_file(in_files, cls._test_file, grid_nbins=5000, grid_lam_range=(0.05, 50))
             print("Done")
 
         # Equivalent to the above data file but the tests' own simple 2d grid. We get expected vals
@@ -63,8 +63,8 @@ class TestBtSettlGrid(unittest.TestCase):
                                 & (index_values["alpha"] == meta["alpha"]))
 
                 lams, flux_densities = np.genfromtxt(in_file, float, comments="#", unpack=True)
-                lams = (lams * meta["lambda_unit"]).to(BtSettlGrid._LAM_UNIT, equivalencies=u.spectral())
-                flux_densities = (flux_densities * meta["flux_unit"]).to(BtSettlGrid._FLUX_DENSITY_UNIT,
+                lams = (lams * meta["lambda_unit"]).to(BtSettlGrid._DEF_LAM_UNIT, equivalencies=u.spectral())
+                flux_densities = (flux_densities * meta["flux_unit"]).to(BtSettlGrid._DEF_FLUX_DENSITY_UNIT,
                                                                          equivalencies=u.spectral_density(lams))
 
                 # Write the row of binned fluxes to the full grid.
@@ -74,7 +74,7 @@ class TestBtSettlGrid(unittest.TestCase):
 
             # Save the subset of the filters in the file too
             filter_map = { "GAIA/GAIA3:Gbp": "GAIA/GAIA3.Gbp", "GAIA/GAIA3:Grp": "GAIA/GAIA3.Grp", "GAIA/GAIA3:G": "GAIA/GAIA3.G" }
-            filters = { viz: BtSettlGrid.get_filter(svo, BtSettlGrid._LAM_UNIT) for viz, svo in filter_map.items() }
+            filters = { viz: BtSettlGrid.get_filter(svo, BtSettlGrid._DEF_LAM_UNIT) for viz, svo in filter_map.items() }
 
             cls._flat_file.parent.mkdir(parents=True, exist_ok=True)
             np.savez_compressed(cls._flat_file, flat_grid=flat_grid, lams=grid_full_bin_lams.value, filters=filters)

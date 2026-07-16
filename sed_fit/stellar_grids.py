@@ -37,20 +37,26 @@ class StellarGrid(_AbstractBaseClass):
     _DEF_FILTER_MAP_FILE = _this_dir / "data/stellar_grids/sed-filter-mappings.json"
 
     # Default output units
-    _LAM_UNIT = _u.um
-    _FLUX_DENSITY_UNIT = _u.W / _u.m**2 / _u.Hz
-    _FLUX_UNIT = _u.W / _u.m**2
-    _TEFF_UNIT = _u.K
-    _LOGG_UNIT = _u.dex
+    _DEF_LAM_UNIT = _u.um
+    _DEF_TEFF_UNIT = _u.K
+    _DEF_LOGG_UNIT = _u.dex
+    _DEF_FLUX_DENSITY_UNIT = _u.W / _u.m**2 / _u.Hz
+    _DEF_FLUX_UNIT = _u.W / _u.m**2
 
     # For calculating fluxes for stars with given radius in R_sun and distance in pc
     _pc = (1 * _u.pc).to(_u.m).value
     _R_sun = (1 * _u.R_sun).to(_u.m).value
 
     def __init__(self,
-                 wavelength_range: _Tuple[float], teff_range: _Tuple[float],
-                 logg_range: _Tuple[float], metal_range: _Tuple[float],
-                 extinction_model: _BaseExtModel=None):
+                 wavelength_range: _Tuple[float],
+                 teff_range: _Tuple[float],
+                 logg_range: _Tuple[float],
+                 metal_range: _Tuple[float],
+                 extinction_model: _BaseExtModel=None,
+                 wavelength_unit: _u.Unit=_DEF_LAM_UNIT,
+                 teff_unit: _u.Unit=_DEF_TEFF_UNIT,
+                 logg_unit: _u.Unit=_DEF_LOGG_UNIT,
+                 flux_unit: _u.Unit=_DEF_FLUX_UNIT):
         """
         Initializes a new instance of this class.
         Sets up any extinction model and the details of the supported filters.
@@ -60,6 +66,10 @@ class StellarGrid(_AbstractBaseClass):
         :logg_range: the range of supported logg values
         :metal_range: the range of supported metallicities
         :extinction_model: optional extinction model to use if applying extinction to model fluxes
+        :wavelength_unit: the unit for the wavelength values
+        :teff_unit: the unit for the effective temperature values
+        :logg_unit: the unit for the logg values
+        :flux_unit: the unit for the flux values
         :verbose: whether or not to output verbose status messages
         """
         super().__init__()
@@ -68,10 +78,14 @@ class StellarGrid(_AbstractBaseClass):
         self._logg_range = logg_range
         self._metal_range = metal_range
         self._extinction_model = extinction_model
+        self._wavelength_unit = wavelength_unit
+        self._teff_unit = teff_unit
+        self._logg_unit = logg_unit
+        self._flux_unit = flux_unit
 
         # The json has maps betweeen name of supported Vizier SED filters the corresponding SVO name
         with open(StellarGrid._DEF_FILTER_MAP_FILE, "r", encoding="utf8") as j:
-            self._filters = { viz: self.get_filter(svo, self._LAM_UNIT, extinction_model)
+            self._filters = { viz: self.get_filter(svo, wavelength_unit, extinction_model)
                                                             for viz, svo in _json_load(j).items() }
             self._filter_names_list = list(self._filters.keys())
 
@@ -101,24 +115,24 @@ class StellarGrid(_AbstractBaseClass):
         return self._metal_range
 
     @property
+    def wavelength_unit(self) -> _u.Unit:
+        """ Gets the unit of the flux wavelengths """
+        return self._wavelength_unit
+
+    @property
     def teff_unit(self) -> _u.Unit:
         """ Gets the temperature units """
-        return self._TEFF_UNIT
+        return self._teff_unit
 
     @property
     def logg_unit(self) -> _u.Unit:
         """ Gets the logg units """
-        return self._LOGG_UNIT
-
-    @property
-    def wavelength_unit(self) -> _u.Unit:
-        """ Gets the unit of the flux wavelengths """
-        return self._LAM_UNIT
+        return self._logg_unit
 
     @property
     def flux_unit(self) -> _u.Unit:
         """ Gets the unit of the returned fluxes """
-        return self._FLUX_UNIT
+        return self._flux_unit
 
     def has_filter(self, filter_name: _Union[str, _Iterable]) -> _np.ndarray[bool]:
         """ Gets whether this model knows of the requested filter(s) """
@@ -271,8 +285,10 @@ class StellarGrid(_AbstractBaseClass):
         """
 
     @classmethod
-    def get_filter(cls, svo_name: str, lambda_unit: _u.Unit, extinction_model: _BaseExtModel=None) \
-                        -> _Table:
+    def get_filter(cls,
+                   svo_name: str,
+                   wavelength_unit: _u.Unit,
+                   extinction_model: _BaseExtModel=None) -> _Table:
         """
         Downloads and caches the requested filter from the SVO. Returns a table of the filter's
         Wavelength and Transmission fields, and adds a Norm-Transmission column.
@@ -281,7 +297,7 @@ class StellarGrid(_AbstractBaseClass):
         axav and mid_axav items with extinction curve Ax/Av ratios at the filter's wavelengths.
 
         :svo_name: the unique name of the filter given by the SVO
-        :lambda_unit: the wavelength unit for the Wavelength column
+        :wavelength_unit: the wavelength unit for the Wavelength column
         :extinction_model: the extinction model being used with this filter
         :returns: and astropy Table with Wavelength, Transmission and Norm-Transmission columns
         """
@@ -302,8 +318,8 @@ class StellarGrid(_AbstractBaseClass):
         table["Norm-Transmission"] = ftrans / _np.sum(ftrans) # so total trans == 1
 
         # Add metadata on the filter coverage
-        if table["Wavelength"].unit != lambda_unit:
-            table["Wavelength"] = table["Wavelength"].to(lambda_unit, equivalencies=_u.spectral())
+        if table["Wavelength"].unit != wavelength_unit:
+            table["Wavelength"]=table["Wavelength"].to(wavelength_unit, equivalencies=_u.spectral())
         table.sort("Wavelength")
 
         table.meta["filter_short"] = _np.min(table["Wavelength"].quantity)
@@ -320,27 +336,27 @@ class StellarGrid(_AbstractBaseClass):
 
     @classmethod
     def _bin_fluxes(cls,
-                    lambdas: _ArrayLike,
+                    wavelengths: _ArrayLike,
                     fluxes: _ArrayLike,
-                    lam_bin_midpoints: _ArrayLike) -> _u.Quantity:
+                    bin_midpoints: _ArrayLike) -> _u.Quantity:
         """
         Will calculate and return the means of the fluxes within each of the requested bins.
 
-        :lambdas: source flux wavelengths
-        :fluxes: source fluxes
-        :lam_bin_midpoints: the midpoint lambda of each bin to populate
+        :wavelengths: source flux wavelengths and unit
+        :fluxes: source fluxes and unit
+        :bin_midpoints: the midpoint wavelength and unit of each bin to populate
         :returns: the binned fluxes in the same units as the input
         """
-        if lam_bin_midpoints.unit != lambdas.unit:
-            lam_bin_midpoints = lam_bin_midpoints.to(lambdas.unit, equivalencies=_u.spectral())
+        if bin_midpoints.unit != wavelengths.unit:
+            bin_midpoints = bin_midpoints.to(wavelengths.unit, equivalencies=_u.spectral())
 
         # Scipy wants bin edges so find midpoints between bins then extend by one at start & end.
-        bin_mid_gaps = _np.diff(lam_bin_midpoints) / 2
-        bin_edges = _np.concatenate([[lam_bin_midpoints[0] - (bin_mid_gaps[0])],
-                                    lam_bin_midpoints[:-1] + (bin_mid_gaps),
-                                    [lam_bin_midpoints[-1] + (bin_mid_gaps[-1])]]).value
+        bin_mid_gaps = _np.diff(bin_midpoints) / 2
+        bin_edges = _np.concatenate([[bin_midpoints[0] - (bin_mid_gaps[0])],
+                                    bin_midpoints[:-1] + (bin_mid_gaps),
+                                    [bin_midpoints[-1] + (bin_mid_gaps[-1])]]).value
 
-        result = _binned_statistic(lambdas.value, fluxes.value, statistic=_np.nanmean,
+        result = _binned_statistic(wavelengths.value, fluxes.value, statistic=_np.nanmean,
                                    bins=bin_edges, range=(bin_edges.min(), bin_edges.max()))
         return result.statistic << fluxes.unit
 
@@ -409,8 +425,9 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 f"metal values and {len(meta['wavelengths'])} wavelength bins",end="...",flush=True)
 
         # For reddening. The extinction model may restrict the wavelength range we can report on.
+        # Older data files may be missing the wavelength_unit in which case we want a hard fail here
         if extinction_model is not None:
-            wavenumbers = 1 / (meta['wavelengths'] << self.wavelength_unit).to(_u.micron).value
+            wavenumbers = 1 / (meta['wavelengths'] << meta["wavelength_unit"]).to(_u.micron).value
             wavelength_mask = wavenumbers >= _np.min(extinction_model.x_range)
             wavelength_mask &= wavenumbers <= _np.max(extinction_model.x_range)
             self._wavelengths = meta['wavelengths'][wavelength_mask]
@@ -421,7 +438,11 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                          teff_range=(meta['teffs'].min(), meta['teffs'].max()),
                          logg_range=(meta['loggs'].min(), meta['loggs'].max()),
                          metal_range=(meta['metals'].min(), meta['metals'].max()),
-                         extinction_model=extinction_model)
+                         extinction_model=extinction_model,
+                         wavelength_unit=meta["wavelength_unit"],
+                         teff_unit=meta["teff_unit"],
+                         logg_unit=meta["logg_unit"],
+                         flux_unit=meta["flux_unit"])
 
         # Create the single interpolator over the full grid of flux data.
         # Used for the interpolation of fluxes for given teff, logg, metal & wavelengths.
@@ -506,7 +527,12 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                        out_file: _Path,
                        grid_nbins: int=None,
                        grid_lam_range: _Tuple=None,
-                       grid_lam_sub_range: _Tuple=None):
+                       grid_lam_sub_range: _Tuple=None,
+                       wavelength_unit: _u.Unit=StellarGrid._DEF_LAM_UNIT,
+                       teff_unit: _u.Unit=StellarGrid._DEF_TEFF_UNIT,
+                       logg_unit: _u.Unit=StellarGrid._DEF_LOGG_UNIT,
+                       flux_density_unit: _u.Unit=StellarGrid._DEF_FLUX_DENSITY_UNIT,
+                       flux_unit: _u.Unit=StellarGrid._DEF_FLUX_UNIT):
         """
         Will ingest the chosen ascii grid files, previously downloaded from the SVO Theoretical
         Spectra service, to produce a grid file containing the grids of fluxes and associated
@@ -522,6 +548,11 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         :grid_nbins: the number of binned fluxes to store per row, or None for no re-binning
         :grid_lam_range: wavelength range (to, from) of the grid [micron], or None for no re-binning
         :grid_lam_sub_range: subset range (to, from) of grid_lam_range to use, or None for all
+        :wavelength_unit: the unit for the output wavelength values
+        :teff_unit: the unit for the output effective temperature values
+        :logg_unit: the unit for the output logg values
+        :flux_density_unit: the unit for working with flux density values
+        :flux_unit: the unit for the output flux values
         """
         # Need the files in sorted list as we go through more than once & the order may set indices.
         source_files = sorted(source_files)
@@ -536,19 +567,19 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         # use the fluxes at wavelengths common to all of the source files (if both args None).
         do_bin_fluxes = grid_nbins is not None and grid_lam_range is not None
         if do_bin_fluxes:
-            print(f"Will bin the fluxes in {grid_nbins} bins over {grid_lam_range} {cls._LAM_UNIT}")
-            grid_bin_lams = _np.geomspace(*grid_lam_range, grid_nbins, True) << cls._LAM_UNIT
+            print(f"Will bin fluxes in {grid_nbins} bins over {grid_lam_range} {wavelength_unit}")
+            grid_bin_lams = _np.geomspace(*grid_lam_range, grid_nbins, True) << wavelength_unit
         else:
             print("Binning not requested so will use the published fluxes directly")
-            grid_bin_lams = cls._get_common_wavelengths(source_files, cls._LAM_UNIT)
+            grid_bin_lams = cls._get_common_wavelengths(source_files, wavelength_unit)
             grid_nbins = len(grid_bin_lams)
 
         # This is an option for creating a smaller data grid which gives the same results, within
         # its range, as the full grid as the spacing will be the same within the subset range.
         if grid_lam_sub_range:
-            print(f"Selecting a subset of the bins within {grid_lam_sub_range} {cls._LAM_UNIT}.")
-            grid_bin_mask = (min(grid_lam_sub_range) * cls._LAM_UNIT <= grid_bin_lams) \
-                          & (grid_bin_lams <= max(grid_lam_sub_range) * cls._LAM_UNIT)
+            print(f"Selecting a subset of the bins within {grid_lam_sub_range} {wavelength_unit}.")
+            grid_bin_mask = (min(grid_lam_sub_range) * wavelength_unit <= grid_bin_lams) \
+                          & (grid_bin_lams <= max(grid_lam_sub_range) * wavelength_unit)
             grid_bin_lams = grid_bin_lams[grid_bin_mask]
             grid_nbins = len(grid_bin_lams)
             print(f"Will now produce a grid for only the {grid_nbins} bins within the subset.")
@@ -571,9 +602,9 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 print(f"skipped row as alpha != 0 ({meta['alpha']})")
             else:
                 lams, flux_dens = _np.genfromtxt(source_file, _np.float32, "#", unpack=True)
-                lams = (lams * meta["lambda_unit"]).to(cls._LAM_UNIT, equivalencies=_u.spectral())
+                lams = (lams * meta["lambda_unit"]).to(wavelength_unit, equivalencies=_u.spectral())
                 flux_dens = (flux_dens * meta["flux_unit"])\
-                                .to(cls._FLUX_DENSITY_UNIT, equivalencies=_u.spectral_density(lams))
+                                    .to(flux_density_unit, equivalencies=_u.spectral_density(lams))
 
                 print(f"[{len(lams):,d} rows]:",
                       ", ".join(f"{k}={meta[k]: .2f}" for k in index_names), end="...", flush=True)
@@ -609,9 +640,12 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 model_grid[nans, wix] = _np.maximum(int_vals, 0.0)
         print("done.")
 
-        # Complete the metadata; row indices and col indices (filters & wavelengths)
+        # Complete the metadata; row & col indices (wavelengths) and units
         grid_meta = { "teffs": teffs, "loggs": loggs, "metals": metals,
-                      "wavelengths": grid_bin_lams.value, "created": _datetime.now(_timezone.utc) }
+                     "wavelengths": grid_bin_lams.value, "teff_unit": teff_unit,
+                     "logg_unit": logg_unit, "wavelength_unit": wavelength_unit,
+                     "flux_density_unit": flux_density_unit, "flux_unit": flux_unit,
+                     "created": _datetime.now(_timezone.utc) }
 
         # Now we write out the model grids and metadata to a compressed npz file
         print(f"Saving model grids and metadata to {out_file}, overwriting any existing file.")
@@ -683,11 +717,6 @@ class BtSettlGrid(SvoStellarGrid):
                  use_quick_mode: bool=True, interp_method: str=None, verbose: bool=False):
         super().__init__(data_file, extinction_model, use_quick_mode, interp_method, verbose)
 
-    @classmethod
-    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=DEF_DATA_FILE,
-                       grid_nbins: int=5000, grid_lam_range: _Tuple=(0.05, 50.), **kwargs):
-        SvoStellarGrid.make_grid_file(source_files, out_file, grid_nbins, grid_lam_range, **kwargs)
-
 
 class KuruczGrid(SvoStellarGrid):
     """ Generates model SED fluxes from pre-built grid of Kurucz ODFNEW /NOVER fluxes. """
@@ -696,11 +725,6 @@ class KuruczGrid(SvoStellarGrid):
     def __init__(self, data_file: _Path=DEF_DATA_FILE, extinction_model: _BaseExtModel=None,
                  use_quick_mode: bool=True, interp_method: str=None, verbose: bool=False):
         super().__init__(data_file, extinction_model, use_quick_mode, interp_method, verbose)
-
-    @classmethod
-    def make_grid_file(cls, source_files: _Iterable, out_file: _Path=DEF_DATA_FILE, **kwargs):
-        # pylint: disable=arguments-differ
-        SvoStellarGrid.make_grid_file(source_files, out_file, **kwargs)
 
 
 def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarGrid:

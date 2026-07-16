@@ -44,7 +44,7 @@ if __name__ == "__main__":
     in_files = sorted((Path.cwd() / ".cache/.modelgrids/bt-settl-agss/").glob("lte*.dat.txt"))
     data_file = BtSettlGrid.DEF_DATA_FILE
 
-    BtSettlGrid.make_grid_file(in_files, data_file)
+    BtSettlGrid.make_grid_file(in_files, data_file, grid_nbins=5000, grid_lam_range=(0.05, 50))
 
     quick_test_stellar_grid_lookup(BtSettlGrid(data_file, use_quick_mode=False, verbose=True))
 
