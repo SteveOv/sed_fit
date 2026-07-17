@@ -231,9 +231,7 @@ class StellarGrid(_AbstractBaseClass):
             fluxes = self.get_fluxes(filter_lam[ol_mask], teff, logg, metal, radius, distance, av=0)
             if av:
                 # Optimisation for filters, use cached Ax/Av ratios for the filter's set of lams
-                if self.extinction_model is None:
-                    raise ValueError("av specified but cannot redden without an extinction_model")
-                fluxes *= _np.power(10, -0.4 * filter_table["axav"][ol_mask] * av)
+                fluxes *= self.get_extinction(av, axav=filter_table["axav"][ol_mask])
             flux = _np.sum(_np.multiply(fluxes, filter_table["Norm-Transmission"][ol_mask].value))
         return flux
 
@@ -265,10 +263,35 @@ class StellarGrid(_AbstractBaseClass):
             fluxes *= ((radius * self._R_sun) / (distance * self._pc))**2
 
         if av:
+            fluxes *= self.get_extinction(av, wavelengths=wavelengths)
+        return fluxes
+
+    def get_extinction(self,
+                       av: float,
+                       wavelengths: _ArrayLike=None,
+                       axav: _ArrayLike=None) -> _ArrayLike:
+        """
+        Will get the extinction coefficients for the passed Av value,
+        at either the passed set of wavelengths or for the the passed known Ax/Av ratios.
+
+        :av: the Av value for the extinction
+        :wavelengths: the set of wavelengths to get the Ax/Av ratios and then coefficients for
+        :axav: the Ax/Av ratios to calculate the coefficients for if already known
+        """
+        if axav is None:
+            # Need to get the Ax/Av extinction curve for the requested wavelengths
+            if wavelengths is None:
+                raise ValueError("Either wavelengths or axav is required")
             if self.extinction_model is None:
                 raise ValueError("av specified but cannot redden without an extinction_model")
-            fluxes *= self.extinction_model.extinguish(wavelengths << self.wavelength_unit, Av=av)
-        return fluxes
+
+            if self.wavelength_unit == _u.um:
+                axav = self.extinction_model(1 / (wavelengths << self.wavelength_unit))
+            else:
+                axav = self.extinction_model(1 / (wavelengths << self.wavelength_unit).to(_u.um))
+
+        return _np.power(10.0, -0.4 * axav * av)
+
 
     @_abstractmethod
     def _get_surface_fluxes(self, wavelengths: _ArrayLike, teff: float, logg: float, metal: float) \
@@ -505,11 +528,7 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             if radius and distance:
                 flux *= ((radius * self._R_sun) / (distance * self._pc))**2
             if av:
-                if self.extinction_model is None:
-                    raise ValueError("av specified but cannot redden without an extinction_model")
-                # A copy of eqn within dust_extinction BaseExtModel.extinguish() to give fractional
-                # extinction, and using a cached copy of the filter's mid Ax/Av (<-- big speed up).
-                flux *= _np.power(10.0, -0.4 * interp_row["axav_mid"] * av)
+                flux *= self.get_extinction(av, axav=interp_row["axav_mid"])
         else:
             # Fall back to the more expensive, full calculations. These call get_fluxes() and will
             # then apply any radius, distance and extinction calcs to all fluxes before summing.
