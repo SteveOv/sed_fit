@@ -446,55 +446,67 @@ class TestBtSettlGrid(unittest.TestCase):
     #
     #   PERF
     #
-    def test_get_filter_fluxes_quick_mode_perf(self):
-        """ Tests get_filter_fluxes() relative throughput with/without reddening """
-        ext_model = G23(Rv=3.1)
-        model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=True)
-        
-        print()
-        for filters,                teff,   logg,   metal,  rad,    dist,   av,     msg in [
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   None,   "unreddened single filter"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    None,   None,   0.1,    "reddened single filter with av"),
-            (["GAIA/GAIA3:Gbp"],    5000,   4.0,    0.0,    1.0,    10.0,   0.1,    "reddened single filter with rad/dist & av"),
-        ]:
-            with self.subTest(msg=msg):
-                start = default_timer()
-                for _ in range(1000):
-                    model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
-                print(f"{msg} takes {default_timer() - start:.6f} s")
-
     def test_get_filter_flux_quick_mode_perf(self):
-        """ Tests get_filter_fluxes() relative throughput with/without reddening """
+        """ Tests get_filter_flux(quick mode) relative throughput with/without radius/dist and reddening """
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=True)
-        
+
         print()
-        for filt,               teff,   logg,   metal,  rad,    dist,   av,     msg in [
-            ("GAIA/GAIA3:Gbp",  5000,   4.0,    0.0,    None,   None,   None,   "unreddened filter"),
-            ("GAIA/GAIA3:Gbp",  5000,   4.0,    0.0,    None,   None,   0.1,    "reddened filter with av"),
-            ("GAIA/GAIA3:Gbp",  5000,   4.0,    0.0,    1.0,    10.0,   0.1,    "reddened filter with rad/dist & av"),
+        filt = "GAIA/GAIA3:Gbp"
+        for (teff,   logg,   metal,  rad,    dist,   av,     msg) in [
+            (5000,   4.0,    0.0,    None,   None,   None,   "unreddened filter"),
+            (5000,   4.0,    0.0,    1.0,    10.0,   None,   "unreddened filter with rad/dist"),
+            (5000,   4.0,    0.0,    None,   None,   0.1,    "reddened filter with av"),
+            (5000,   4.0,    0.0,    1.0,    10.0,   0.1,    "reddened filter with rad/dist & av"),
         ]:
             with self.subTest(msg=msg):
+                model_sed.get_filter_flux(filt, teff, logg, metal, rad, dist, av)
+
                 start = default_timer()
-                for _ in range(1000):
+                for _ in range(10000):
                     model_sed.get_filter_flux(filt, teff, logg, metal, rad, dist, av)
                 print(f"{msg} takes {default_timer() - start:.6f} s")
 
     def test_get_filter_flux_non_quick_mode_perf(self):
-        """ Tests get_filter_fluxes() relative throughput with/without reddening """
+        """ Tests get_filter_flux(non quick mode) relative throughput with/without radius/dist and reddening """
         ext_model = G23(Rv=3.1)
         model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=False)
-        
+
         print()
-        for filt,               teff,   logg,   metal,  rad,    dist,   av,     msg in [
-            ("GAIA/GAIA3:Gbp",  5000,   4.0,    0.0,    None,   None,   None,   "unreddened filter"),
-            ("GAIA/GAIA3:Gbp",  5000,   4.0,    0.0,    None,   None,   0.1,    "reddened filter with av"),
-            ("GAIA/GAIA3:Gbp",  5000,   4.0,    0.0,    1.0,    10.0,   0.1,    "reddened filter with rad/dist & av"),
+        filt = "GAIA/GAIA3:Gbp"
+        for (teff,   logg,   metal,  rad,    dist,   av,     msg) in [
+            (5000,   4.0,    0.0,    None,   None,   None,   "unreddened filter"),
+            (5000,   4.0,    0.0,    1.0,    10.0,   None,   "unreddened filter with rad/dist"),
+            (5000,   4.0,    0.0,    None,   None,   0.1,    "reddened filter with av"),
+            (5000,   4.0,    0.0,    1.0,    10.0,   0.1,    "reddened filter with rad/dist & av"),
         ]:
             with self.subTest(msg=msg):
+                model_sed.get_filter_flux(filt, teff, logg, metal, rad, dist, av)
+
                 start = default_timer()
-                for _ in range(1000):
+                for _ in range(10000):
                     model_sed.get_filter_flux(filt, teff, logg, metal, rad, dist, av)
+                print(f"{msg} takes {default_timer() - start:.6f} s")
+
+    def test_get_fluxes_perf(self):
+        """ Tests get_fluxes() relative throughput with/without radius/dist and reddening """
+        ext_model = G23(Rv=3.1)
+        model_sed = BtSettlGrid(self._test_file, extinction_model=ext_model, use_quick_mode=False)
+
+        print()
+        wavelengths = np.linspace(1.0, 5.0, 500) # implied grid wavelength units of um
+        for (teff,   logg,   metal,  rad,    dist,   av,     msg) in [
+            (5000,   4.0,    0.0,    None,   None,   None,   "unreddened, no Av and no rad/dist"),
+            (5000,   4.0,    0.0,    1.0,    10.0,   None,   "unreddened, no Av but with rad/dist"),
+            (5000,   4.0,    0.0,    None,   None,   0.1,    "reddened with av"),
+            (5000,   4.0,    0.0,    1.0,    10.0,   0.1,    "reddened with av and with rad/dist"),
+        ]:
+            with self.subTest(msg=msg):
+                model_sed.get_fluxes(wavelengths, teff, logg, metal, rad, dist, av)
+
+                start = default_timer()
+                for _ in range(2000):
+                    model_sed.get_fluxes(wavelengths, teff, logg, metal, rad, dist, av)
                 print(f"{msg} takes {default_timer() - start:.6f} s")
 
 if __name__ == "__main__":
