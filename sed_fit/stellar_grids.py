@@ -22,6 +22,7 @@ from scipy.interpolate import RBFInterpolator as _RBFInterpolator
 import astropy.units as _u
 from astropy.table import Table as _Table
 from astropy.io.votable import parse_single_table as _parse_single_table
+from astropy import constants as consts
 
 from dust_extinction.baseclasses import BaseExtModel as _BaseExtModel
 
@@ -389,6 +390,42 @@ class StellarGrid(_AbstractBaseClass):
         result = _binned_statistic(wavelengths.value, fluxes.value, statistic=_np.nanmean,
                                    bins=bin_edges, range=(bin_edges.min(), bin_edges.max()))
         return result.statistic << fluxes.unit
+
+
+class BlackBodyGrid(StellarGrid):
+    """ Stellar Grid for producing black body fluxes """
+    # These are pre-calculated parts of the BB model, involving only the constants.
+    # Where B(v, T) = (2hv^3)/c^2 * 1/(exp(hv/kT)-1)  [W / (m^2 sr Hz)]
+    _bb_const_pt1 = (2 * consts.h.si.value) / consts.c.si.value**2      # 2h/c^2
+    _bb_const_pt2 = _np.exp(consts.h.si.value / consts.k_B.si.value)    # exp(h/k)
+
+    def __init__(self, extinction_model: _BaseExtModel=None):
+        if extinction_model is None:
+            wl_range = (0.01, 100)
+        else: # Assuming that x_range is in implied units of 1 / micron & _DEF_LAM_UNIT is micron
+            wl_range = (1 / max(extinction_model.x_range), 1 / min(extinction_model.x_range))
+        super().__init__(wl_range, (2000, 100000), (4.0, 4.0), (0, 0),
+                         extinction_model,
+                         self._DEF_LAM_UNIT, self._DEF_TEFF_UNIT,
+                         self._DEF_LOGG_UNIT, self._DEF_FLUX_UNIT)
+
+    def _get_surface_fluxes(self, wavelengths, teff, logg, metal):
+        # The values of logg & metal are ignored
+        freqs = 2.99792458E+14 / wavelengths                # from um to Hz
+        spec_radiance = self._bb_spec_radiance(teff, freqs) # W / (m^2 sr Hz)
+        return spec_radiance * _np.pi * freqs               # * sr * Hz, leaving fluxes as W / m^2
+
+    def _bb_spec_radiance(self, teff: float, freqs: _ArrayLike) -> _ArrayLike:
+        """
+        Calculates the blackbody spectral radiance at given temperature [K] and frequencies [Hz]
+        - B(v, T) = (2hv^3)/c^2 * 1/(exp(hv/kT)-1)
+
+        :teff: the temperature in K
+        :freqs: the frequencies in Hz to calculate the model for
+        :returns: the BB radiance in implied units of W / (m^2 sr Hz)
+        """
+        # Effectively       ((2h)/c^2)*v^3     *        1 / ((e^(h/k))^(v/T) - 1)
+        return (self._bb_const_pt1 * freqs**3) / (self._bb_const_pt2**(freqs / teff) - 1)
 
 
 class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
