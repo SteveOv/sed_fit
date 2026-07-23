@@ -287,6 +287,7 @@ class StellarGrid(_AbstractBaseClass):
             if self.extinction_model is None:
                 raise ValueError("av specified but cannot redden without an extinction_model")
 
+            # pylint: disable=not-callable
             if self.wavelength_unit == _u.um:
                 axav = self.extinction_model(1 / (wavelengths << self.wavelength_unit))
             else:
