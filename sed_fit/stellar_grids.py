@@ -460,11 +460,11 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             wavenumbers = 1 / (meta['wavelengths'] << meta["wavelength_unit"]).to(_u.micron).value
             wavelength_mask = wavenumbers >= _np.min(extinction_model.x_range)
             wavelength_mask &= wavenumbers <= _np.max(extinction_model.x_range)
-            self._wavelengths = meta['wavelengths'][wavelength_mask]
+            wavelengths = meta['wavelengths'][wavelength_mask]
         else:
-            self._wavelengths = meta['wavelengths']
+            wavelengths = meta['wavelengths']
 
-        super().__init__(wavelength_range=(self._wavelengths.min(), self._wavelengths.max()),
+        super().__init__(wavelength_range=(wavelengths.min(), wavelengths.max()),
                          teff_range=(meta['teffs'].min(), meta['teffs'].max()),
                          logg_range=(meta['loggs'].min(), meta['loggs'].max()),
                          metal_range=(meta['metals'].min(), meta['metals'].max()),
@@ -511,11 +511,6 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         # Delay this, as we need get_filter_flux() in "full" mode to set up the filter interpolators
         self._use_quick_mode = use_quick_mode
         if verbose: print("done.")
-
-    @property
-    def wavelengths(self) -> _np.ndarray:
-        """ Gets the wavelength values for which unfiltered fluxes are published. """
-        return self._wavelengths
 
     def get_filter_flux(self,
                         the_filter: _Union[str, int],

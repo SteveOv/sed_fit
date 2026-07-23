@@ -31,27 +31,27 @@ class TestBtSettlGrid(unittest.TestCase):
         #   - metal: -0.5 to 0.5
         #   - alpha: 0.0 to 0.2
         in_files = sorted((BtSettlGrid._CACHE_DIR / ".modelgrids/bt-settl-agss-test/").glob("lte*.dat.txt"))
+        grid_lam_nbins = 5000
 
         # This is a BtSettlGrid model file with a limited range of test teff, logg, metal & alpha values
         if not cls._test_file.exists():
             print(f"{cls.__name__}.setUpClass() test data file '{cls._test_file}' not found so will attempt to create it")
-            BtSettlGrid.make_grid_file(in_files, cls._test_file, grid_nbins=5000, grid_lam_range=(0.05, 50))
+            BtSettlGrid.make_grid_file(in_files, cls._test_file, grid_nbins=grid_lam_nbins, grid_lam_range=(0.05, 50))
             print("Done")
 
         # Equivalent to the above data file but the tests' own simple 2d grid. We get expected vals
         # from this so tests don't depend on, & can detect failures with, the class/file under test.
         if not cls._flat_file.exists():
             print(f"{cls.__name__}.setUpClass() test flat file '{cls._flat_file}' not found so will attempt to create it")
-            grid_full_nbins = len(BtSettlGrid( cls._test_file).wavelengths)
-            grid_full_bin_lams = np.geomspace(0.05, 50, num=grid_full_nbins, endpoint=True) << u.um
+            grid_full_bin_lams = np.geomspace(0.05, 50, num=grid_lam_nbins, endpoint=True) << u.um
             grid_full_bin_freqs = grid_full_bin_lams.to(u.Hz, equivalencies=u.spectral())
 
             # Create a simple, flat file from the same data for expected values
             index_names = ["teff", "logg", "metal", "alpha"]
             index_values = BtSettlGrid._get_list_of_index_values(in_files, index_names, False)
-            print(f"Ingesting {len(index_values)} files and will save fluxes in {grid_full_nbins} bins")
+            print(f"Ingesting {len(index_values)} files and will save fluxes in {grid_lam_nbins} bins")
 
-            flat_grid = np.full((len(index_values), len(index_names) + grid_full_nbins), np.nan, float)
+            flat_grid = np.full((len(index_values), len(index_names) + grid_lam_nbins), np.nan, float)
             flat_grid[..., :len(index_names)] = index_values.tolist()
 
             for in_file in in_files:
@@ -250,7 +250,7 @@ class TestBtSettlGrid(unittest.TestCase):
             """ Tests get_fluxes(teff, logg, metal, av) raises ValueError when given av but no extinction model set """
             model_sed = BtSettlGrid(self._test_file, extinction_model=None)
             with self.assertRaises(ValueError):
-                model_sed.get_fluxes(model_sed.wavelengths, 5000, 4.0, 0.0, av=0.1)
+                model_sed.get_fluxes([5.0], 5000, 4.0, 0.0, av=0.1)
 
     def test_get_fluxes_test_with_extinction_model(self):
         """ Tests get_fluxes(teff, logg, metal, radius, dist, av) happy path tests for redenning """
@@ -284,7 +284,7 @@ class TestBtSettlGrid(unittest.TestCase):
         ]:
             with self.subTest(msg=msg):
                 with self.assertRaises(ValueError):
-                    model_sed.get_fluxes(model_sed.wavelengths, teff, logg, metal)
+                    model_sed.get_fluxes([5.0], teff, logg, metal)
 
 
     #
@@ -349,16 +349,14 @@ class TestBtSettlGrid(unittest.TestCase):
                 # Known fluxes; a whole row from which we'll calculate the expected filtered values
                 flat_lams, exp_fluxes = self._get_flux_value_from_flat_grid(teff, logg, metal)
                 model_lam_mask = (flat_lams >= min(model_sed.wavelength_range)) & (flat_lams <= max(model_sed.wavelength_range))
-                exp_fluxes = exp_fluxes[model_lam_mask]
+                flat_lams, exp_fluxes = flat_lams[model_lam_mask], exp_fluxes[model_lam_mask]
 
                 if rad and dist:
                     exp_fluxes *= (rad * u.R_sun).to(u.m)**2 / (dist * u.pc).to(u.m)**2
                 if av:
-                    exp_fluxes *= ext_model.extinguish(1 / model_sed.wavelengths, av)
+                    exp_fluxes *= ext_model.extinguish(1 / flat_lams, av)
 
-                exp_fluxes = self._calculate_filtered_flux_values(filters,
-                                                                  model_sed.wavelengths,
-                                                                  exp_fluxes)
+                exp_fluxes = self._calculate_filtered_flux_values(filters, flat_lams, exp_fluxes)
 
                 fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
                 self.assertIsInstance(fluxes, np.ndarray)
@@ -386,16 +384,14 @@ class TestBtSettlGrid(unittest.TestCase):
                 # Known fluxes; a whole row from which we'll calculate the expected filtered values
                 flat_lams, exp_fluxes = self._get_flux_value_from_flat_grid(teff, logg, metal)
                 model_lam_mask = (flat_lams >= min(model_sed.wavelength_range)) & (flat_lams <= max(model_sed.wavelength_range))
-                exp_fluxes = exp_fluxes[model_lam_mask]
+                flat_lams, exp_fluxes = flat_lams[model_lam_mask], exp_fluxes[model_lam_mask]
 
                 if rad and dist:
                     exp_fluxes *= (rad * u.R_sun).to(u.m)**2 / (dist * u.pc).to(u.m)**2
                 if av:
-                    exp_fluxes *= ext_model.extinguish(1 / model_sed.wavelengths, av)
+                    exp_fluxes *= ext_model.extinguish(1 / flat_lams, av)
 
-                exp_fluxes = self._calculate_filtered_flux_values(filters,
-                                                                  model_sed.wavelengths,
-                                                                  exp_fluxes)
+                exp_fluxes = self._calculate_filtered_flux_values(filters, flat_lams, exp_fluxes)
 
                 fluxes = model_sed.get_filter_fluxes(filters, teff, logg, metal, rad, dist, av)
                 self.assertIsInstance(fluxes, np.ndarray)

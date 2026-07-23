@@ -138,26 +138,25 @@ def plot_fitted_model(sed: Table,
     if show_combined_spectrum or show_component_spectra:
         def plot_spec(lams, flux, color, alpha, zorder=-100):
             freqs = lams.to(u.Hz, equivalencies=u.spectral())
-            flux *= model_grid.flux_unit
             if flux.unit.is_equivalent(vfv_unit):
                 vfv = (flux).to(vfv_unit, equivalencies=u.spectral_density(freqs))
             else:
                 vfv = (flux * freqs).to(vfv_unit, equivalencies=u.spectral_density(freqs))
             ax.plot(lams, vfv, c=color, alpha=alpha, lw=0.75, zorder=zorder)
 
-        spec_lams = model_grid.wavelengths * model_grid.wavelength_unit
+        spec_lams = np.geomspace(*model_grid.wavelength_range, 5000) * model_grid.wavelength_unit
         mask = spec_lams >= sed[sed_lambda_colname].quantity.min() * 0.8
         mask &= spec_lams <= sed[sed_lambda_colname].quantity.max() * 1.2
-        comb_spec_flux = np.zeros_like(model_grid.wavelengths, dtype=float)
+        comb_spec_flux = np.zeros((sum(mask)), dtype=float)
         for (teff, logg, rad, dist, av), c in zip(iterate_theta(theta_noms),
                                                 _cycle_for(star_colors, nstars)):
-            spec_flux = model_grid.get_fluxes(wavelengths=model_grid.wavelengths, teff=teff,
-                                              logg=logg, metal=0, radius=rad, distance=dist, av=av)
+            spec_flux = model_grid.get_fluxes(wavelengths=spec_lams[mask].value, teff=teff,
+                                              logg=logg, radius=rad, distance=dist, av=av)
             comb_spec_flux += spec_flux
             if show_component_spectra:
-                plot_spec(spec_lams[mask], spec_flux[mask], c, 0.25)
+                plot_spec(spec_lams[mask], spec_flux * model_grid.flux_unit, c, 0.25)
         if show_combined_spectrum:
-            plot_spec(spec_lams[mask], comb_spec_flux[mask], comb_color, 0.75)
+            plot_spec(spec_lams[mask], comb_spec_flux * model_grid.flux_unit, comb_color, 0.75)
         ax.set(xscale="log", xlabel=xlabel, yscale="log", ylabel=ylabel)
 
     if show_grid:
