@@ -46,7 +46,7 @@ class Testplots(unittest.TestCase):
                        title="CW CMa SED")
         plt.show(block=True)
 
-    # @unittest.skip("Comment this out to run this interactive test")
+    @unittest.skip("Comment this out to run this interactive test")
     def test_plot_fitted_model(self):
         """ Interactive test for easily running/testing plot_fitted_model() """
         # Also a handy option for reproducing the plot for fully fitted CW CMa

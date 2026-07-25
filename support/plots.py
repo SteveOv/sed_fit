@@ -20,6 +20,10 @@ from uncertainties.unumpy import nominal_values
 from sed_fit.stellar_grids import SvoStellarGrid
 from sed_fit.fitter import model_func, iterate_theta
 
+# Units for the wavelemgth (x) and flux (y) axes
+lam_unit = u.um
+flux_unit = u.W / u.m**2
+
 def plot_sed(x: u.Quantity,
              fluxes: List[u.Quantity],
              flux_errs: List[u.Quantity]=None,
@@ -55,8 +59,8 @@ def plot_sed(x: u.Quantity,
     plot_sed_on_axes(ax, x, fluxes, flux_errs,
                      fmts, fillstyles=fillstyles, marker_sizes=7.5, labels=labels)
 
-    ax.set(xscale="log", xlabel=f"Wavelength ({u.um:latex_inline})",
-           yscale="log", ylabel=f"${{\\rm \\nu F(\\nu)}}$ ({u.W/u.m**2:latex_inline})")
+    ax.set(xscale="log", xlabel=f"Wavelength ({lam_unit:latex_inline})",
+           yscale="log", ylabel=f"${{\\rm \\nu F(\\nu)}}$ ({flux_unit:latex_inline})")
     if show_grid:
         ax.grid(True, which="both", axis="both", alpha=0.33, color="lightgray")
     legend_loc = "best" if labels is not None and any(l is not None for l in labels) else None
@@ -116,9 +120,8 @@ def plot_fitted_model(sed: Table,
     else:
         labels = [None] * (2 + nstars)
 
-    vfv_unit = u.W / u.m**2
-    xlabel = f"Wavelength ({u.um:latex_inline})"
-    ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({vfv_unit:latex_inline})"
+    xlabel = f"Wavelength ({lam_unit:latex_inline})"
+    ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({flux_unit:latex_inline})"
     lam = sed[sed_lambda_colname].to(u.um, equivalencies=u.spectral())
     comb_model_flux = np.sum(model_fluxes, axis=0)
 
@@ -137,11 +140,7 @@ def plot_fitted_model(sed: Table,
     # Plot the raw spectra for each component as a background
     if show_combined_spectrum or show_component_spectra:
         def plot_spec(lams, flux, color, alpha, zorder=-100):
-            freqs = lams.to(u.Hz, equivalencies=u.spectral())
-            if flux.unit.is_equivalent(vfv_unit):
-                vfv = (flux).to(vfv_unit, equivalencies=u.spectral_density(freqs))
-            else:
-                vfv = (flux * freqs).to(vfv_unit, equivalencies=u.spectral_density(freqs))
+            vfv = flux.to(flux_unit, equivalencies=u.spectral() + u.spectral_density(lams))
             ax.plot(lams, vfv, c=color, alpha=alpha, lw=0.75, zorder=zorder)
 
         spec_lams = np.geomspace(*model_grid.wavelength_range, 5000) * model_grid.wavelength_unit
@@ -206,31 +205,16 @@ def plot_sed_on_axes(ax: _Axes,
     if isinstance(alphas, Number):
         alphas = [alphas] * len(fluxes)
 
-    vfv_unit = u.W / u.m**2
-    lam = x.to(u.um, equivalencies=u.spectral())
-    freq = x.to(u.Hz, equivalencies=u.spectral())
+    lams = x.to(u.um, equivalencies=u.spectral())
+    with u.set_enabled_equivalencies(u.spectral() + u.spectral_density(lams)):
+        for flux, flux_err, fmt, fs, ms, alpha, label \
+                in zip(fluxes, flux_errs, fmts, fillstyles, marker_sizes, alphas, labels):
+            vfv = None if flux is None else flux.to(flux_unit)
+            vfv_err = None if flux_err is None else flux_err.to(flux_unit)
+            if vfv is not None:
+                ax.errorbar(lams, vfv, vfv_err, fmt=fmt, fillstyle=fs, ms=ms,
+                            mew=0.75, elinewidth=0.75, alpha=alpha, label=label)
 
-    for flux, flux_err, fmt, fs, ms, alpha, label \
-            in zip(fluxes, flux_errs, fmts, fillstyles, marker_sizes, alphas, labels):
-        vfv, vfv_err = None, None
-        if flux is not None:
-            if flux.unit.is_equivalent(vfv_unit):
-                vfv = flux.to(vfv_unit , equivalencies=u.spectral_density(freq))
-            else:
-                vfv = (flux * freq).to(vfv_unit , equivalencies=u.spectral_density(freq))
-        if flux_err is not None:
-            if flux_err.unit.is_equivalent(vfv_unit):
-                vfv_err = flux_err.to(vfv_unit , equivalencies=u.spectral_density(freq))
-            else:
-                vfv_err = (freq * flux_err).to(vfv_unit, equivalencies=u.spectral_density(freq))
-
-        if vfv is not None:
-            ax.errorbar(lam, vfv, vfv_err, fmt=fmt, fillstyle=fs, ms=ms,
-                        mew=0.75, elinewidth=0.75, alpha=alpha, label=label)
-
-    ax.set(xscale="log", xlabel=f"Wavelength [{u.um:latex_inline}]",
-           yscale="log", ylabel=f"${{\\rm \\nu F(\\nu)}}$ [{u.W/u.m**2:latex_inline}]")
-   
 
 def format_axes(ax: _Axes, title: str=None,
                 xlabel: str=None, ylabel: str=None,
