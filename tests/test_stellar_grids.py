@@ -44,7 +44,6 @@ class TestBtSettlGrid(unittest.TestCase):
         if not cls._flat_file.exists():
             print(f"{cls.__name__}.setUpClass() test flat file '{cls._flat_file}' not found so will attempt to create it")
             grid_full_bin_lams = np.geomspace(0.05, 50, num=grid_lam_nbins, endpoint=True) << u.um
-            grid_full_bin_freqs = grid_full_bin_lams.to(u.Hz, equivalencies=u.spectral())
 
             # Create a simple, flat file from the same data for expected values
             index_names = ["teff", "logg", "metal", "alpha"]
@@ -62,15 +61,13 @@ class TestBtSettlGrid(unittest.TestCase):
                                 & (index_values["metal"] == meta["metal"])\
                                 & (index_values["alpha"] == meta["alpha"]))
 
-                lams, flux_densities = np.genfromtxt(in_file, float, comments="#", unpack=True)
+                lams, fluxes = np.genfromtxt(in_file, float, comments="#", unpack=True)
                 lams = (lams * meta["lambda_unit"]).to(BtSettlGrid._DEF_LAM_UNIT, equivalencies=u.spectral())
-                flux_densities = (flux_densities * meta["flux_unit"]).to(BtSettlGrid._DEF_FLUX_DENSITY_UNIT,
-                                                                         equivalencies=u.spectral_density(lams))
+                fluxes = (fluxes * meta["flux_unit"]).to(BtSettlGrid._DEF_FLUX_UNIT, equivalencies=u.spectral_density(lams))
 
                 # Write the row of binned fluxes to the full grid.
-                bin_flux_densities = BtSettlGrid._bin_fluxes(lams, flux_densities, grid_full_bin_lams)
-                bin_fluxes = (bin_flux_densities *  grid_full_bin_freqs).value
-                flat_grid[row_ix, len(index_names):] = bin_fluxes
+                bin_fluxes = BtSettlGrid._bin_fluxes(lams, fluxes, grid_full_bin_lams)
+                flat_grid[row_ix, len(index_names):] = bin_fluxes.value
 
             # Save the subset of the filters in the file too
             filter_map = { "GAIA/GAIA3:Gbp": "GAIA/GAIA3.Gbp", "GAIA/GAIA3:Grp": "GAIA/GAIA3.Grp", "GAIA/GAIA3:G": "GAIA/GAIA3.G" }

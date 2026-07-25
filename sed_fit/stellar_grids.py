@@ -41,7 +41,6 @@ class StellarGrid(_AbstractBaseClass):
     _DEF_LAM_UNIT = _u.um
     _DEF_TEFF_UNIT = _u.K
     _DEF_LOGG_UNIT = _u.dex
-    _DEF_FLUX_DENSITY_UNIT = _u.W / _u.m**2 / _u.Hz
     _DEF_FLUX_UNIT = _u.W / _u.m**2
 
     # For calculating fluxes for stars with given radius in R_sun and distance in pc
@@ -592,7 +591,6 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                        wavelength_unit: _u.Unit=StellarGrid._DEF_LAM_UNIT,
                        teff_unit: _u.Unit=StellarGrid._DEF_TEFF_UNIT,
                        logg_unit: _u.Unit=StellarGrid._DEF_LOGG_UNIT,
-                       flux_density_unit: _u.Unit=StellarGrid._DEF_FLUX_DENSITY_UNIT,
                        flux_unit: _u.Unit=StellarGrid._DEF_FLUX_UNIT):
         """
         Will ingest the chosen ascii grid files, previously downloaded from the SVO Theoretical
@@ -612,7 +610,6 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
         :wavelength_unit: the unit for the output wavelength values
         :teff_unit: the unit for the output effective temperature values
         :logg_unit: the unit for the output logg values
-        :flux_density_unit: the unit for working with flux density values
         :flux_unit: the unit for the output flux values
         """
         # Need the files in sorted list as we go through more than once & the order may set indices.
@@ -645,8 +642,6 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             grid_nbins = len(grid_bin_lams)
             print(f"Will now produce a grid for only the {grid_nbins} bins within the subset.")
 
-        grid_bin_freqs = grid_bin_lams.to(_u.Hz, equivalencies=_u.spectral())
-
         # Now set up the multi-D index array and the target bin fluxes grid which we will populate
         # We can't rely on sorting the files for the correct order as + & - switched for metals.
         teffs = _np.unique(index_vals["teff"])
@@ -662,10 +657,13 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
             if meta.get("alpha", 0) != 0 or meta.get("afe", 0) != 0:
                 print(f"skipped row as alpha != 0 ({meta['alpha']})")
             else:
-                lams, flux_dens = _np.genfromtxt(source_file, _np.float32, "#", unpack=True)
-                lams = (lams * meta["lambda_unit"]).to(wavelength_unit, equivalencies=_u.spectral())
-                flux_dens = (flux_dens * meta["flux_unit"])\
-                                    .to(flux_density_unit, equivalencies=_u.spectral_density(lams))
+                # The source tends to have fluxes as densities (i.e. erg/cm^2/s/AA, Jy or W/m^2/Hz).
+                # These are converted into the output flux or flux density units of the target grid.
+                lams, fluxes = _np.genfromtxt(source_file, _np.float32, "#", unpack=True)
+                lams = (lams * meta["lambda_unit"]) \
+                                            .to(wavelength_unit, equivalencies=_u.spectral())
+                fluxes = (fluxes * meta["flux_unit"]) \
+                                            .to(flux_unit, equivalencies=_u.spectral_density(lams))
 
                 print(f"[{len(lams):,d} rows]:",
                       ", ".join(f"{k}={meta[k]: .2f}" for k in index_names), end="...", flush=True)
@@ -675,11 +673,10 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
                 lix = _np.where(loggs == meta["logg"])
                 mix = _np.where(metals == meta["metal"])
                 if do_bin_fluxes:
-                    bin_flux_dens = cls._bin_fluxes(lams, flux_dens, grid_bin_lams)
-                    model_grid[tix, lix, mix] = (bin_flux_dens * grid_bin_freqs).value
+                    model_grid[tix, lix, mix] = cls._bin_fluxes(lams, fluxes, grid_bin_lams).value
                 else:
                     wix = _np.where(_np.in1d(lams, grid_bin_lams, assume_unique=True))
-                    model_grid[tix, lix, mix] = (flux_dens[wix] * grid_bin_freqs).value
+                    model_grid[tix, lix, mix] = fluxes[wix].value
                 print(f"added row of {grid_nbins} fluxes")
 
         # Interpolate any gaps in the grid. We can't interpolate on dimensions with only one choice.
@@ -703,9 +700,9 @@ class SvoStellarGrid(StellarGrid, _AbstractBaseClass):
 
         # Complete the metadata; row & col indices (wavelengths) and units
         grid_meta = { "teffs": teffs, "loggs": loggs, "metals": metals,
-                     "wavelengths": grid_bin_lams.value, "teff_unit": teff_unit,
-                     "logg_unit": logg_unit, "wavelength_unit": wavelength_unit,
-                     "flux_density_unit": flux_density_unit, "flux_unit": flux_unit,
+                     "wavelengths": grid_bin_lams.value,
+                     "teff_unit": teff_unit, "logg_unit": logg_unit,
+                     "wavelength_unit": wavelength_unit, "flux_unit": flux_unit,
                      "created": _datetime.now(_timezone.utc) }
 
         # Now we write out the model grids and metadata to a compressed npz file
