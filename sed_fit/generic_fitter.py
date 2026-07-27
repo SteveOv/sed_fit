@@ -46,6 +46,7 @@ def minimize_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
         methods = [methods]
 
     with _catch_warnings(category=[RuntimeWarning, _OptimizeWarning]):
+        _filterwarnings("ignore", "overflow encountered in scalar power")
         _filterwarnings("ignore", "invalid value encountered in ")
         _filterwarnings("ignore", "Desired error not necessarily achieved due to precision loss.")
         _filterwarnings("ignore", "Unknown solver options:")
