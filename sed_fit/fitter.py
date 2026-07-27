@@ -1,28 +1,22 @@
 """ A module for fitting stellar model fluxes for multiple stars to stellar SEDs """
-from typing import Tuple, List, Callable, Union
+from typing import Tuple as _Tuple, List as _List, Callable as _Callable, Union as _Union
 from numbers import Number
-from math import floor as _floor
 
-from warnings import filterwarnings as _filterwarnings, catch_warnings as _catch_warnings
-
-from multiprocessing import Pool as _Pool, cpu_count as _cpu_count
 from threading import Lock as _Lock
 
 import numpy as _np
 
-from scipy.optimize import minimize as _minimize
-from scipy.optimize import OptimizeResult, OptimizeWarning
+from scipy.optimize import OptimizeResult
 
 from emcee import EnsembleSampler
-from emcee.autocorr import AutocorrError
 
 import astropy.units as _u
 from astropy.constants import iau2015 as _iau2015
 
 from uncertainties import UFloat as _UFloat
-from uncertainties.unumpy import uarray as _uarray
 
 from sed_fit.stellar_grids import StellarGrid
+from sed_fit import generic_fitter as _generic_fitter
 
 # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, no-member
 pc = (1 * _u.pc).to(_u.m).value
@@ -40,8 +34,8 @@ _y: _np.ndarray[float]
 _y_err: _np.ndarray[float]
 _degr_free: float
 _stellar_grid: StellarGrid
-_ln_prior_func: Callable[[_np.ndarray[float]], float]
-_ln_likelihood_func: Callable[[_np.ndarray[float]], float]
+_ln_prior_func: _Callable[[_np.ndarray[float]], float]
+_ln_likelihood_func: _Callable[[_np.ndarray[float]], float]
 
 # Try to protect them as much as possible by wrapping writes within a critical section
 _fit_mutex = _Lock()
@@ -129,10 +123,9 @@ def minimize_fit(x: _np.ndarray[float],
                 theta0: _np.ndarray[float],
                 fit_mask: _np.ndarray[float],
                 stellar_grid: StellarGrid,
-                ln_prior_func: Callable[[_np.ndarray[float]], float],
-                ln_likelihood_func: Callable[[_np.ndarray[float]],float]=_ln_chisq_likelihood_func,
-                methods: List[str]=None,
-                verbose: bool=False) -> Tuple[_np.ndarray[float], OptimizeResult]:
+                ln_prior_func: _Callable[[_np.ndarray[float]], float],
+                ln_likelihood_func: _Callable[[_np.ndarray[float]],float]=_ln_chisq_likelihood_func,
+                **kwargs) -> _Tuple[_np.ndarray[float], OptimizeResult]:
     """
     Quick fit model star(s) to the SED with scipy minimize fit of the model data generated from
     a combination of the fixed params on class iniialization and the fitted ones given here.
@@ -148,53 +141,19 @@ def minimize_fit(x: _np.ndarray[float],
     :stellar_grid: a StellarGrid instance with which model fluxes will be generated
     :ln_prior_func: a callback function to evaluate the current theta against prior criteria
     :ln_likelihood_func: a callback function to evaluate the goodness of fit of model vs observation
-    :methods: scipy optimize fitting algorithms to try, defaults to [Nelder-Mead, SLSQP, None]
+    :**kwargs: kwargs passed to the generic_fitter.minimize_fit function
     :returns: the final set of parameters & a scipy OptimizeResult with the details of the outcome
     """
-    if verbose:
-        _print_theta(theta0, fit_mask, "minimize_fit(theta0=", ")")
-
     if not _np.isfinite(ln_prior_func(theta0)):
         raise ValueError("theta0 failed ln_prior_func check.")
-    theta = theta0.copy() # Make sure we don't modify the input
 
-    if methods is None:
-        methods = ["Nelder-Mead", "SLSQP", None]
-    elif isinstance(methods, str):
-        methods = [methods]
-
-    max_iters = int(1000 * sum(fit_mask))
-
-    with _fit_mutex, _catch_warnings(category=[RuntimeWarning, OptimizeWarning]):
-        _filterwarnings("ignore", "invalid value encountered in ")
-        _filterwarnings("ignore", "Desired error not necessarily achieved due to precision loss.")
-        _filterwarnings("ignore", "Unknown solver options:")
-
+    with _fit_mutex:
         _set_globals(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
 
-        best_soln, best_method = None, None
-        for method in methods:
-            soln = _minimize(lambda *args: -_ln_prob_func(*args), x0=theta[fit_mask],
-                             method=method, options={ "maxiter": max_iters, "maxfev": max_iters })
-            if verbose:
-                print(f"({method})", "succeeded" if soln.success else f"failed [{soln.message}]",
-                        f"after {soln.nit:d} iterations & {soln.nfev:d} function evaluation(s)",
-                        f"[fun = {soln.fun:.6f}]")
-
-            if best_soln is None \
-                    or (soln.success and not best_soln.success) \
-                    or (soln.success == best_soln.success and soln.fun < best_soln.fun):
-                best_soln, best_method = soln, method
-
-    if best_soln.success:
-        theta[fit_mask] = best_soln.x
-        if verbose:
-            _print_theta(theta, fit_mask, f"The best fit with {best_method} method yielded theta=")
-    else:
-        _print_theta(theta0, fit_mask, "The fit failed so returning input, theta0=")
-        theta = theta0
-
-    return theta, best_soln
+        return _generic_fitter.minimize_fit(ln_prob_func=_ln_prob_func,
+                                            theta0=theta0,
+                                            fit_mask=fit_mask,
+                                            **kwargs)
 
 
 def mcmc_fit(x: _np.ndarray[float],
@@ -203,18 +162,9 @@ def mcmc_fit(x: _np.ndarray[float],
              theta0: _np.ndarray[float],
              fit_mask: _np.ndarray[bool],
              stellar_grid: StellarGrid,
-             ln_prior_func: Callable[[_np.ndarray[float]], float],
-             ln_likelihood_func: Callable[[_np.ndarray[float]], float]=_ln_chisq_likelihood_func,
-             nwalkers: int=100,
-             nsteps: int=100000,
-             thin_by: int=10,
-             seed: int=42,
-             processes: int=1,
-             autocor_tol: int=50,
-             early_stopping: bool=True,
-             early_stopping_from: int=None,
-             progress: Union[bool, str]=False,
-             verbose: bool=False) -> Tuple[_np.ndarray[_UFloat], EnsembleSampler]:
+             ln_prior_func: _Callable[[_np.ndarray[float]], float],
+             ln_likelihood_func: _Callable[[_np.ndarray[float]], float]=_ln_chisq_likelihood_func,
+             **kwargs) -> _Tuple[_np.ndarray[_UFloat], EnsembleSampler]:
     """
     Full fit model star(s) to the SED with an MCMC fit of the model data generated from
     a combination of the fixed params on class iniialization and the fitted ones given here.
@@ -232,146 +182,25 @@ def mcmc_fit(x: _np.ndarray[float],
     :stellar_grid: a StellarGrid instance with which model fluxes will be generated
     :ln_prior_func: a callback function to evaluate the current theta against prior criteria
     :ln_likelihood_func: a callback function to evaluate the goodness of fit of model vs observation
-    :nwalkers: the number of mcmc walkers to employ
-    :nsteps: the maximium number of mcmc steps to make for each walker
-    :thin_by: step interval to inspect fit progress
-    :seed: optional seed for random behaviour
-    :processes: optional number of parallel processes to use, or None to let code choose
-    :autocor_tol: the autocorrelation tolerance
-    :early_stopping: stop fitting if solution has converged & further improvements are negligible
-    :early_stopping_from: override the number of steps before early stopping is considered
-    :progress: whether to show a progress bar (see emcee documentation for other values)
+    :**kwargs: kwargs passed to the generic_fitter.mcmc_fit function
     :returns: fitted set of parameters as UFloats and an EnsembleSampler with details of the outcome
     """
-    if verbose:
-        _print_theta(theta0, fit_mask, "mcmc_fit(theta0=", ")")
-
     if not _np.isfinite(ln_prior_func(theta0)):
         raise ValueError("theta0 failed ln_prior_func check.")
-    theta = theta0.copy() # Make sure we don't modify the input
 
-    rng = _np.random.default_rng(seed)
-    theta_fit = theta[fit_mask]
-    ndim = len(theta_fit)
-    tau = [_np.inf] * ndim
+    with _fit_mutex:
+        _set_globals(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
 
-    # Starting positions for the walkers clustered around theta0, via priors to ensure they're valid
-    p0, test_theta = [], theta0.copy()
-    while len(p0) < int(nwalkers):
-        test_theta[fit_mask] = theta_fit + (theta_fit * rng.normal(0, 0.05, ndim))
-        if _np.isfinite(ln_prior_func(test_theta)):
-            p0 += [test_theta[fit_mask]]
-
-    with _fit_mutex, \
-            _Pool(processes=processes) as pool, \
-            _catch_warnings(category=[RuntimeWarning, UserWarning]):
-
-        _filterwarnings("ignore", message="invalid value encountered in ")
-        _filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
-
-        _set_globals(x, y, y_err, theta, fit_mask, stellar_grid, ln_prior_func, ln_likelihood_func)
-
-        if early_stopping_from is None or early_stopping_from <= 0:
-            # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
-            early_stopping_from = int(50 * ndim * autocor_tol)
-
-        if verbose:
-            print("Running MCMC fit on", f"{processes}" if processes else f"up to {_cpu_count()}",
-                f"process(es) with {nwalkers:d} walkers for {nsteps:d}",
-                f"steps, sampling every {thin_by:d} steps." if thin_by > 1 else "steps.")
-            if early_stopping:
-                print(f"Early stopping is considered after {early_stopping_from:d} steps.")
-
-        sampler = EnsembleSampler(int(nwalkers), ndim, _ln_prob_func, pool=pool)
-        step = 0
-        for _ in sampler.sample(initial_state=p0, iterations=nsteps // thin_by,
-                                thin_by=thin_by, tune=True, progress=progress):
-            step = sampler.iteration * thin_by
-            if early_stopping and step % 1000 == 0:
-                try:
-                    # The autocor time (tau) is the #steps to effectively forget start position.
-                    # As the fit converges the change in tau will tend towards zero.
-                    prev_tau, tau = tau, sampler.get_autocorr_time(c=5, tol=autocor_tol) * thin_by
-                    if step >= early_stopping_from \
-                            and not any(_np.isnan(tau)) \
-                            and all(tau < step / 100) \
-                            and all(abs(prev_tau - tau) / prev_tau < 0.01):
-                        break
-                except AutocorrError:
-                    # The chain is too short. Can set the quiet arg to True in which case a warning
-                    # message is output (but not a Python warning). Cleaner to consume the error.
-                    pass
-
-        if verbose and early_stopping and 0 < step < nsteps:
-            print(f"Halting MCMC after {step:d} steps as the walkers are past",
-                  "100 times the autocorrelation time & the fit has converged.")
-
-    # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
-    samples = samples_from_sampler(sampler, autocor_tol, thin_by, flat=True, verbose=verbose)
-    fit_nom, quant_low, quant_high = median_and_quantile_values(samples, axis=0)
-    theta_mcmc = _uarray(theta, 0)
-    theta_mcmc[fit_mask] = _uarray(fit_nom, _np.mean([quant_low, quant_high], axis=0))
-
-    if verbose:
-        _print_theta(theta_mcmc, fit_mask, "The MCMC fit yielded theta:  ")
-
-    return theta_mcmc, sampler
+        return _generic_fitter.mcmc_fit(ln_prob_func=_ln_prob_func,
+                                        ln_prior_func=ln_prior_func,
+                                        theta0=theta0,
+                                        fit_mask=fit_mask,
+                                        **kwargs)
 
 
-def samples_from_sampler(sampler: EnsembleSampler,
-                         autocor_tol: int=50,
-                         thin_by: int=1,
-                         flat: bool=False,
-                         verbose: bool=False) -> _np.ndarray:
-    """
-    Gets the chain of samples from the passed sampler after calculating and discarding the
-    estimated burn-in.
-    
-    :sampler: the completed sampler to inspect
-    :autocor_tol: the autocorrelation tolerance
-    :thin_by: step interval that was used to inspect the fit's progress and yield samples
-    :flat: whether or not to return flattened samples
-    :verbose: whether or not to write acceptance, sample and burn-in information to stdout
-    :returns: the post burn-in samples
-    """
-    tau_iters = sampler.get_autocorr_time(c=5, tol=autocor_tol, quiet=True)
-    def_tau_iter = sampler.iteration / 10
-    burn_in_iters = int(_np.ceil(max(_np.nan_to_num(tau_iters, copy=True, nan=def_tau_iter)) * 2))
-
-    # The chain consists of the samples at each iteration (equivalent to each thin_by step)
-    samples = sampler.get_chain(discard=burn_in_iters, flat=flat)
-
-    if verbose:
-        print(f"Mean Acceptance fraction:    {_np.mean(sampler.acceptance_fraction):.3f}")
-        print( "Autocorrelation steps (tau):", ", ".join(f"{t:.3f}" for t in tau_iters * thin_by))
-        print(f"Estimated burn-in steps:     {burn_in_iters * thin_by:,}")
-        print(f"Leaving samples of shape:    {samples.shape}", "*flattened" if flat else "")
-
-    return samples
-
-
-def median_and_quantile_values(values: Union[_np.ndarray[float], _np.ndarray[_UFloat]],
-                               q: Tuple[float, float]=(0.16, 0.84),
-                               axis: int=0) \
-                            -> Tuple[_np.ndarray[float], _np.ndarray[float], _np.ndarray[float]] :
-    """
-    Will calculate the median and q-th lower & uppers quantile values of the passed
-    array along the chosen axis.
-
-    :values: the values to aggregate
-    :q: a tuple in the form (q-lower, q-upper) of the lower and upper probabilities to calculate
-    :axis: the axis along which the median and quantiles are computed
-    :values: a tuple of arrays for the median, lower and upper quantiles
-    """
-    median = _np.median(values, axis=axis)
-    quant_low = median - _np.quantile(values, min(q), axis=axis)
-    quant_high = _np.quantile(values, max(q), axis=axis) - median
-    return median, quant_low, quant_high
-
-
-def create_theta(teffs: Union[List[float], float],
-                 loggs: Union[List[float], float],
-                 radii: Union[List[float], float],
+def create_theta(teffs: _Union[_List[float], float],
+                 loggs: _Union[_List[float], float],
+                 radii: _Union[_List[float], float],
                  dist: float,
                  av: float=0,
                  nstars: int=2,
@@ -406,7 +235,7 @@ def create_theta(teffs: Union[List[float], float],
         # Attempt to interpret the value as a List[Number]
         if isinstance(val, Number):
             theta[ix : ix+exp_count] = [val] * exp_count
-        elif isinstance(val, Tuple|List|_np.ndarray) \
+        elif isinstance(val, _Tuple|_List|_np.ndarray) \
                 and len(val) == exp_count \
                 and all(isinstance(v, Number|None) for v in val):
             theta[ix : ix+exp_count] = [t for t in val]
@@ -435,26 +264,14 @@ def iterate_theta(theta: _np.ndarray[float]):
         yield theta[star], theta[nstars*1 + star], theta[nstars*2 + star], dist, av
 
 
-def _print_theta(theta: _np.ndarray[float],
-                 fit_mask: _np.ndarray[bool],
-                 prefix: str="",
-                 suffix: str=""):
-    """ Utility function for pretty printing theta arrays & highlighting which items are fitted. """
-    print((prefix if prefix else '') +
-          "[" +
-          ", ".join(f"{t:.3e}{'*' if f else ''}" for t, f in zip(theta, fit_mask)) +
-          "]" +
-          (suffix if suffix else ''))
-
-
 def _set_globals(x: _np.ndarray[float],
-                         y: _np.ndarray[float],
-                         y_err: _np.ndarray[float],
-                         theta0: _np.ndarray[float],
-                         fit_mask: _np.ndarray[bool],
-                         stellar_grid: StellarGrid,
-                         ln_prior_func: Callable[[_np.ndarray[float]], float],
-                         ln_likelihood_func: Callable[[_np.ndarray[float]], float]):
+                 y: _np.ndarray[float],
+                 y_err: _np.ndarray[float],
+                 theta0: _np.ndarray[float],
+                 fit_mask: _np.ndarray[bool],
+                 stellar_grid: StellarGrid,
+                 ln_prior_func: _Callable[[_np.ndarray[float]], float],
+                 ln_likelihood_func: _Callable[[_np.ndarray[float]], float]):
     """ Utility function to set the various (hateful) globals required for fitting. """
     # pylint: disable=global-statement, line-too-long
     global _x, _y, _y_err, _degr_free, _fixed_theta, _fit_mask, _stellar_grid, _ln_prior_func, _ln_likelihood_func
