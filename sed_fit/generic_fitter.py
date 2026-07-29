@@ -23,9 +23,10 @@ def minimize_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
                  verbose: bool=False) -> _Tuple[_np.ndarray[float], _OptimizeResult]:
     """
     Optimize the parameters for ln_prob_func using scipy's minimize functionality, starting with
-    the initial set in theta0. The fit_mask indicates which members of theta0 may be varied (True)
-    and which should be held fixed (False). Will fit ln_prob_func with each of the listed methods,
-    returning the result from that which yields the result with the smallest magnitude.
+    the initial set in theta0. The fit_mask indicates which members of theta0 may be fitted (True)
+    and which should be held fixed (False). If fit_mask is omitted it is assumed that all values
+    may be fitted. Will fit ln_prob_func with each of the listed methods, returning the result from
+    that which yields the result with the smallest magnitude.
 
     :ln_prob_func: the probability function to optimize - expected to return negative values
     :theta0: the initial set of candidate parameters for the ln_prob_func
@@ -99,9 +100,9 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
              progress: _Union[bool, str]=False,
              verbose: bool=False) -> _Tuple[_np.ndarray[_UFloat], _EnsembleSampler]:
     """
-    Sample the parameters for ln_prob_func using emcee MCMC functionality, starting with
-    the initial set in theta0. The fit_mask indicates which members of theta0 may be varied (True)
-    and which should be held fixed (False).
+    Sample the parameters for ln_prob_func using emcee MCMC functionality, starting with the initial
+    set in theta0. The fit_mask indicates which members of theta0 may be varied (True) and which
+    should be held fixed (False). If fit_mask is omitted it is assumed that all values are fitted.
 
     Will run up to niters iterations. Every 1000 iterations will check if the fit has
     converged and will stop early if that is the case
@@ -223,13 +224,14 @@ def samples_from_sampler(sampler: _EnsembleSampler,
 
 
 def print_theta(theta: _np.ndarray[float],
-                fit_mask: _np.ndarray[bool],
+                fit_mask: _np.ndarray[bool]=None,
                 prefix: str="",
                 suffix: str="",
                 number_format: str=".3e"):
     """
     Utility function for pretty printing theta arrays. Fitted values,
     those where the fit_mask is True, will be indicated with an asterisk next to the value.
+    If fit_mask is omitted it is assumed that all values are fitted.
 
     :theta: the raw theta array
     :fit_mask: a mask on theta to pick the parameters that are fitted, the rest being fixed
@@ -237,6 +239,8 @@ def print_theta(theta: _np.ndarray[float],
     :suffix: optional text to print after theta
     :number_format: the string interpolation format to apply to the theta items
     """
+    if fit_mask is None:
+        fit_mask = _np.ones_like(theta, dtype=bool)
     item_fmt = f"{{0:{number_format}}}{{1}}"
     print((prefix if prefix else '') +
           "[" +
