@@ -28,8 +28,13 @@ class Test_generic_fitter(unittest.TestCase):
         return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(sigma2))
 
     @staticmethod
-    def ln_prob_func(theta, x, y, y_err):
+    def ln_prob_func(fit_theta, x, y, y_err, theta0=None, fit_mask=None):
         """ Simple "pickleable" prob function """
+        if theta0 is not None and fit_mask is not None:
+            theta = theta0.copy()
+            theta[fit_mask] = fit_theta
+        else:
+            theta = fit_theta
         if np.isfinite(lp := Test_generic_fitter.ln_prior_func(theta)):
             return lp + Test_generic_fitter.ln_likelihood_func(theta, x, y, y_err)
         return -np.inf
@@ -64,17 +69,10 @@ class Test_generic_fitter(unittest.TestCase):
         theta0 = np.array([expected_m, expected_b, np.log(f_true)]) + 0.1 * np.random.randn(3)
         fit_mask = np.array([True, False, True], dtype=bool)
 
-        def _ln_prob_func(theta_fit, x, y, y_err):
-            theta = theta0.copy()
-            theta[fit_mask] = theta_fit
-            if np.isfinite(lp := Test_generic_fitter.ln_prior_func(theta)):
-                return lp + Test_generic_fitter.ln_likelihood_func(theta, x, y, y_err)
-            return -np.inf
-
-        theta_min, _ = minimize_fit(ln_prob_func=_ln_prob_func,
+        theta_min, _ = minimize_fit(ln_prob_func=Test_generic_fitter.ln_prob_func,
                                     theta0=theta0,
                                     fit_mask=fit_mask,
-                                    fit_args=(x, y, y_err),
+                                    fit_args=(x, y, y_err, theta0, fit_mask),
                                     methods=["Nelder-Mead"],
                                     verbose=True)
 
@@ -102,6 +100,29 @@ class Test_generic_fitter(unittest.TestCase):
 
         self.assertAlmostEqual(expected_m, theta_mcmc[0].n, 0)
         self.assertAlmostEqual(expected_b, theta_mcmc[1].n, 0)
+
+    def test_mcmc_fit_zero_in_theta0(self):
+        """ 
+        Previously we would get a ValueError (Initial state has a large condition number) from emcee
+        if one of the theta0 was zero (issue #20). This tests the fix is working.
+        """
+        np.random.seed(123)
+        expected_m, expected_b, f_true = -0.9594, 4.294, 0.534
+        x, y, y_err = Test_generic_fitter._generate_synth_data(expected_m, expected_b, f_true)
+
+        theta0 = np.array([expected_m, expected_b, np.log(f_true)]) + 0.1 * np.random.randn(3)
+        theta0[-1] = 0
+        fit_mask = np.array([True, False, True])
+
+        theta_mcmc, _ = mcmc_fit(ln_prob_func=Test_generic_fitter.ln_prob_func,
+                                 ln_prior_func=Test_generic_fitter.ln_prior_func,
+                                 theta0=theta0,
+                                 fit_mask=fit_mask,
+                                 fit_args=(x, y, y_err, theta0, fit_mask),
+                                 verbose=True)
+
+        self.assertAlmostEqual(expected_m, theta_mcmc[0].n, 0)
+        self.assertEqual(theta0[1], theta_mcmc[1].n)
 
 
     #

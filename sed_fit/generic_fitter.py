@@ -133,10 +133,14 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
     ndim = sum(fit_mask)
     tau = [_np.inf] * ndim
 
-    # Starting positions for the walkers clustered around theta0, via priors to ensure they're valid
+    # Starting position for the walkers clustered around theta0, via priors to ensure they're valid.
+    # We override the normal scale so it's never zero to ensure we have some scatter in p0,
+    # otherwise emcee will likely throw a Value Error "Initial state has large condition number".
+    locs = theta0[fit_mask]
+    scales = _np.maximum(_np.abs(theta0[fit_mask]) * 0.05, 1e-6)
     p0, test_theta = [], theta0.copy()
     while len(p0) < int(nwalkers):
-        test_theta[fit_mask] = theta0[fit_mask] + (theta0[fit_mask] * rng.normal(0, 0.05, ndim))
+        test_theta[fit_mask] = rng.normal(locs, scales)
         if _np.isfinite(ln_prior_func(test_theta)):
             p0 += [test_theta[fit_mask]]
 
