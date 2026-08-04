@@ -57,7 +57,7 @@ def minimize_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
         max_iters = int(1000 * sum(fit_mask))
         best_soln, best_method = None, None
         for method in methods:
-            soln = _minimize(lambda *args: -ln_prob_func(*args),
+            soln = _minimize(lambda *args: abs(ln_prob_func(*args)),
                              x0=theta[fit_mask],
                              # Default args to empty tuple otherwise a None value will be sent
                              args=fit_args or (),
