@@ -144,16 +144,24 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
         if _np.isfinite(ln_prior_func(test_theta)):
             p0 += [test_theta[fit_mask]]
 
-    if early_stopping_from is None or early_stopping_from <= 0:
-        # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
-        early_stopping_from = int(50 * ndim * autocor_tol)
+    thin_by = int(max(1, round(thin_by)))
+    iterations = int(_np.ceil(nsteps / thin_by))
+
+    if early_stopping:
+        if early_stopping_from is None or early_stopping_from <= 0:
+            # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
+            early_stopping_from = int(50 * ndim * autocor_tol)
+        if early_stopping_from >= iterations * thin_by:
+            early_stopping = False
+            if verbose:
+                print(f"Early stopping disabled as the total steps <= {early_stopping_from:d}.")
 
     if verbose:
         print("Running MCMC fit on", f"{processes}" if processes else f"up to {_cpu_count()}",
-            f"process(es) with {nwalkers:d} walkers for {nsteps:d}",
+            f"process(es) with {nwalkers:d} walkers for {iterations * thin_by:d}",
             f"steps, sampling every {thin_by:d} steps." if thin_by > 1 else "steps.")
         if early_stopping:
-            print(f"Early stopping is considered after {early_stopping_from:d} steps.")
+            print(f"Early stopping will be considered after {early_stopping_from:d} steps.")
 
     with _Pool(processes) as pool, _catch_warnings(category=[RuntimeWarning, UserWarning]):
         _filterwarnings("ignore", message="invalid value encountered in ")
@@ -161,7 +169,7 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
 
         sampler = _EnsembleSampler(int(nwalkers), ndim, ln_prob_func, args=fit_args, pool=pool)
         step = 0
-        for _ in sampler.sample(initial_state=p0, iterations=nsteps // thin_by,
+        for _ in sampler.sample(initial_state=p0, iterations=iterations,
                                 thin_by=thin_by, tune=True, progress=progress):
             step = sampler.iteration * thin_by
             if early_stopping and step % 1000 == 0:
@@ -179,9 +187,13 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
                     # message is output (but not a Python warning). Cleaner to consume the error.
                     pass
 
-        if verbose and early_stopping and 0 < step < nsteps:
-            print(f"Halting MCMC sampling after {step:d} steps as the walkers are beyond",
-                    "100 times the autocorrelation time & the fit has converged.")
+        step = sampler.iteration * thin_by
+        if verbose:
+            if early_stopping and step < nsteps:
+                print(f"Halting MCMC sampling after {step:d} steps as the walkers are beyond",
+                        "100 times the autocorrelation time & the fit has converged.")
+            else:
+                print(f"Completed MCMC sampling after {step:d} steps.")
 
         # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
         theta_mcmc = _uarray(theta0, 0)
