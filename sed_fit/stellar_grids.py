@@ -89,6 +89,17 @@ class StellarGrid(_AbstractBaseClass):
                                                             for viz, svo in _json_load(j).items() }
             self._filter_names_list = list(self._filters.keys())
 
+    @staticmethod
+    def get_instance(grid: _Union[str, type], **kwargs):
+        """
+        A factory method for creating StellarGrid subclass instances with the benefit of caching.
+
+        :grid: the type of StellarGrid to get
+        :kwargs: the arguments with which to initialize the grid (specific to the type of grid)
+        :returns: the resulting instance
+        """
+        return get_stellar_grid(grid, **kwargs)
+
     @property
     def extinction_model(self) -> _BaseExtModel:
         """ Get the model used to apply extinction to fluxes """
@@ -813,6 +824,7 @@ def get_stellar_grid(grid: _Union[str, type[StellarGrid]], **kwargs) -> StellarG
     if _AbstractBaseClass in grid_type.__bases__:
         # Careful with this check, as we only want to check the immediate base class(es).
         # Avoid issubclass() as it will always be true because StellarGrid is abstract.
+        # Also inspect isabstract fails as SvoStellarGrid has no abstract members.
         raise ValueError(f"Cannot initialize the abstract class {grid_type.__name__}")
 
     # Ignore kwargs not used by the type's __init__ otherwise we may get a TypeError. This allows
