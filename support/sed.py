@@ -122,6 +122,27 @@ def retain_only_closest_observations(sed: Table, target_coords: SkyCoord) -> Tab
     return sed
 
 
+def retain_only_best_observations(sed: Table, target_coords: SkyCoord) -> Table:
+    """
+    Will select and retain only the "best" observation for each filter. This is decided on the
+    lowest product of the radial distance from the target and flux uncertainty (both normalized).
+
+    :sed: the SED table to filter
+    :target_coordinates: the target's coordinates
+    :returns: the revised SED table, sorted on the sed_wl field
+    """
+    # Lower is better. dist_r & sed_eflux normalized so they're on an equivalent unitless scale.
+    dist_r = np.sqrt((target_coords.ra.to(u.deg).value - sed['_RAJ2000'])**2
+                     + (target_coords.dec.to(u.deg).value - sed['_DEJ2000'])**2).value
+    sed["weight"] =  (dist_r / sum(dist_r)) * (sed["sed_eflux"] / sum(sed["sed_eflux"])).value
+
+    sed.sort(["sed_filter", "weight"])
+    sed = unique(sed, keys=["sed_filter"], keep="first")
+    sed.remove_column("weight")
+    sed.sort(["sed_wl"])
+    return sed
+
+
 def calculate_vfv(sed: Table,
                   freq_colname: str="sed_freq",
                   flux_colname: str="sed_flux",

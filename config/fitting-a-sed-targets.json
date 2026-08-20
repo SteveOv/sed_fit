@@ -128,6 +128,7 @@
         "reference": "SouthworthMurphy+23mnrasl, AbtLevato78pasp",
         "aka": "TIC 125754991, HD 23642",
         "SpT": "A0 Vp(Si) + Am",
+        "sed_tabname_exclusions": ["J/AJ/153/95/table3", "IV/34/epic", "J/A+A/622/A133/cparam"],
         "M1": 2.273,            "M1_err": 0.011,
         "M2": 1.595,            "M2_err": 0.008,
         "R1": 1.799,            "R1_err": 0.019,
@@ -451,7 +452,7 @@
     "V570 Per": {
         "search_term": "V* V570 Per",
         "source": "Rediscussion XIV, Table II. TESS sectors 18 and 58 SAP photometry analysed with JKTEBOP version 43.",
-        "notes": "Southworth23obsR14 gives an ebv of 0.1 to get  from T08 is 0.023+/-0.007",
+        "notes": "Southworth23obsR14 gives an ebv of 0.1 to get  from T08 is 0.023+/-0.007; without excluding the GALEX:FUV & GALEX:NUV SED observations the fitted Teffs as ~600 K below published values;",
         "reference": "Southworth23obsR14 uses E(B-V) 0.05+/-0.02 (STILISM) and references earlier value from TS8 0.023+/-0.007",
         "aka": "TIC 116991977, HD 19457",
         "SpT": "F3 V + F5 V",
