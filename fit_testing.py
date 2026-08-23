@@ -63,6 +63,10 @@ def print_fitted_params(theta: np.ndarray, mask: np.ndarray,
             known = ufloat(known_values_dict[param], known_values_dict.get(f"{param}_err", 0))
         print(f"{param:>12s}{'*' if fitted else ' '} = {val:.3f} {unit:unicode}",
               f"\t ({known:.3f} {unit:unicode})" if known is not None else "")
+    if "source" in known_values_dict:
+        print("Source(s) of known values:", known_values_dict["source"])
+    if "parallax_bibcode" in known_values_dict:
+        print("Source of parallax/distance:", known_values_dict["parallax_bibcode"])
 
 
 if __name__ == "__main__":
@@ -103,10 +107,11 @@ if __name__ == "__main__":
         full_dict = json.load(f)
         targets_cfg = { k: c for k, c in full_dict.items()
                        if (args.target is None and c.get("enabled", True)) or k == args.target }
+    targets_count = len(list(targets_cfg.keys()))
 
     for tix, (target, config) in enumerate(targets_cfg.items(), start=1):
         print("\n\n------------------------------------------------------------")
-        print(f"Processing target {tix}: {target}")
+        print(f"Processing target {tix} of {targets_count}: {target}")
         print("------------------------------------------------------------", flush=True)
 
 
