@@ -114,13 +114,13 @@ def retain_only_closest_observations(sed: Table, target_coords: SkyCoord) -> Tab
     :target_coordinates: the target's coordinates
     :returns: the revised SED table, sorted on the sed_wl field
     """
-    sed["dist_r"] = np.sqrt((target_coords.ra.to(u.deg).value - sed['_RAJ2000'])**2
-                            + (target_coords.dec.to(u.deg).value - sed['_DEJ2000'])**2)
-    sed.sort(["sed_filter", "dist_r"])
+    if "_r" not in sed.colnames:
+        sed["_r"] = _angular_distances(sed["_RAJ2000"].value, sed["_DEJ2000"].value,
+                                       target_coords.fk5)
+    sed.sort(["sed_filter", "_r"])
     sed = unique(sed, keys=["sed_filter"], keep="first")
     sed.sort(["sed_wl"])
     return sed
-
 
 def retain_only_best_observations(sed: Table, target_coords: SkyCoord) -> Table:
     """
@@ -132,15 +132,26 @@ def retain_only_best_observations(sed: Table, target_coords: SkyCoord) -> Table:
     :returns: the revised SED table, sorted on the sed_wl field
     """
     # Lower is better. dist_r & sed_eflux normalized so they're on an equivalent unitless scale.
-    dist_r = np.sqrt((target_coords.ra.to(u.deg).value - sed['_RAJ2000'])**2
-                     + (target_coords.dec.to(u.deg).value - sed['_DEJ2000'])**2).value
-    sed["weight"] =  (dist_r / sum(dist_r)) * (sed["sed_eflux"] / sum(sed["sed_eflux"])).value
+    if "_r" in sed.colnames:
+        dist_r = sed["_r"].value
+    else:
+        dist_r = _angular_distances(sed["_RAJ2000"].value, sed["_DEJ2000"].value, target_coords.fk5)
+    sed["weight"] = (dist_r / sum(dist_r)) * (sed["sed_eflux"] / sum(sed["sed_eflux"])).value
 
     sed.sort(["sed_filter", "weight"])
     sed = unique(sed, keys=["sed_filter"], keep="first")
     sed.remove_column("weight")
     sed.sort(["sed_wl"])
     return sed
+
+def _angular_distances(ra: np.ndarray, dec: np.ndarray, target_coords: SkyCoord) -> np.ndarray:
+    """ Calculates the angular distances in arcsec between the target and the ra & dec arrays """
+    # Using the small angle approximation as deltas are << 1 rad
+    ra_a = np.deg2rad(ra)
+    dec_a = np.deg2rad(dec)
+    ra_b = target_coords.ra.to(u.rad).value
+    dec_b = target_coords.dec.to(u.rad).value
+    return np.sqrt(((ra_a - ra_b) * np.cos(dec_a))**2 + (dec_a - dec_b)**2) * 206265 # rad to arcsec
 
 
 def calculate_vfv(sed: Table,
