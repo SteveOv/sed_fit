@@ -263,11 +263,10 @@ if __name__ == "__main__":
 
         # Full MCMC sampling
         print(flush=True)
-        thin_by = 10 # sample every nth step from the chain
         nwalkers = 100
         theta_mcmc, sampler = mcmc_fit(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func,
-                                       nwalkers=nwalkers, nsteps=100000, thin_by=thin_by,
-                                       processes=8, early_stopping=True, early_stopping_from=10000,
+                                       nwalkers=nwalkers, nsteps=100000, processes=8,
+                                       early_stopping=True, early_stopping_from=10000,
                                        progress=True, verbose=True)
 
         print("Fitted params from MCMC sampling. Those marked * were fitted.",
@@ -280,7 +279,7 @@ if __name__ == "__main__":
         fig.savefig(figs_dir / "sed-mcmc-sampled.pdf")
         plt.close(fig)
 
-        samples = samples_from_sampler(sampler, thin_by=thin_by, flat=True)
+        samples = samples_from_sampler(sampler, flat=True)
         fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
                             quantiles=[0.16, 0.5, 0.84], labels=theta_plot_labels[fit_mask],
                             truths=nom_vals(theta_mcmc[fit_mask]))
