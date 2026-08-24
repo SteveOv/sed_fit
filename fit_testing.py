@@ -22,11 +22,11 @@ from uncertainties import ufloat, nominal_value as nom_val, std_dev
 from uncertainties.unumpy import nominal_values as nom_vals
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.constants.iau2015 import M_sun, R_sun
 from astroquery.gaia import Gaia
 
 from dust_extinction.parameter_averages import G23
 
-from deblib.constants import M_sun, R_sun
 from deblib.stellar import log_g
 
 from support.extinction import get_gontcharov_av
@@ -158,8 +158,9 @@ if __name__ == "__main__":
                 config.setdefault("logg_sys", 4.0)
                 for ix in [1, 2]:
                     if f"logg{ix}" not in config:
-                        logg = log_g(ufloat(config[f"M{ix}"], config.get(f"M{ix}_err", 0)) * M_sun,
-                                    ufloat(config[f"R{ix}"], config.get(f"R{ix}_err", 0)) * R_sun)
+                        logg = log_g(
+                            ufloat(config[f"M{ix}"], config.get(f"M{ix}_err", 0)) * M_sun.value,
+                            ufloat(config[f"R{ix}"], config.get(f"R{ix}_err", 0)) * R_sun.value)
                         config[f"logg{ix}"], config[f"logg{ix}_err"] = nom_val(logg), std_dev(logg)
                 for k in ["Teff", "logg"]:
                     if f"{k}R" not in config:
