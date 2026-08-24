@@ -85,17 +85,32 @@ if __name__ == "__main__":
                     help="specific target from the targets file to be fitted (overrides exclude)")
     ap.add_argument("-mo", "--mcmc-off", dest="mcmc_off", action="store_true", required=False,
                     help="suppress running of MCMC for parameters")
-    ap.set_defaults(targets=[], mcmc_off=False)
+    ap.add_argument ("-o", "--overwrite", dest="overwrite", action="store_true", required=False,
+                     help="force overwrite of existing log and csv files (otherwise append)")
+    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False)
     args = ap.parse_args()
 
     drop_dir = Path.cwd() / "drop/testing"
     drop_dir.mkdir(parents=True, exist_ok=True)
+    log_file = drop_dir / f"{THIS_STEM}.log"
+    if args.overwrite:
+        log_file.unlink(missing_ok=True)
 
-    with redirect_stdout(Tee(open(drop_dir / f"{THIS_STEM}.log", "a", encoding="utf8"))) as log:
+    with redirect_stdout(Tee(open(log_file, "a", encoding="utf8"))) as log:
         print("\n============================================================")
         print(f"Started {THIS_STEM} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
         print("============================================================")
         print(f"Directory for data, logs & plots: {drop_dir}\n", flush=True)
+
+        # Set up the CSV files that will hold the results
+        fit_csv, mcmc_csv = drop_dir / "min-thetas.csv", drop_dir / "mcmc-thetas.csv"
+        if args.overwrite:
+            fit_csv.unlink(missing_ok=True)
+            mcmc_csv.unlink(missing_ok=True)
+        if not fit_csv.exists():
+            fit_csv.write_text("#target," +",".join(l for  l,_ in theta_labels) +"\n")
+        if not mcmc_csv.exists():
+            mcmc_csv.write_text("#target," +",".join(f"{l},{l}_err" for  l,_ in theta_labels) +"\n")
 
         # Extinction model: G23 (Gordon et al., 2023) Milky Way R(V) filter gives broadest coverage
         ext_model = G23(Rv=3.1)
@@ -297,6 +312,10 @@ if __name__ == "__main__":
                 fig.savefig(figs_dir / "sed-min-fitted.pdf")
                 plt.close(fig)
 
+                # Save the results
+                with fit_csv.open("a", encoding="utf8") as f:
+                    f.write(f"{target}," + ",".join(f"{t:.6e}" for t in theta_fit) + "\n")
+
 
                 if args.mcmc_off:
                     print("\nSkipping MCMC sampling.")
@@ -328,6 +347,11 @@ if __name__ == "__main__":
                                     truths=nom_vals(theta_mcmc[fit_mask]))
                 fig.savefig(figs_dir / "sed-mcmc-corner.pdf")
                 plt.close(fig)
+
+                # Save the results
+                with mcmc_csv.open("a", encoding="utf8") as f:
+                    f.write(f"{target}," +",".join(f"{t.n:.6e},{t.s:.6e}" for t in theta_mcmc)+"\n")
+
 
             except Exception as exc: # pylint: disable=broad-exception-caught
                 print(f"\n*** Failed to fit {target} with the following error... ***")
