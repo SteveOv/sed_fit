@@ -8,11 +8,11 @@ import argparse
 from datetime import datetime
 from contextlib import redirect_stdout
 from inspect import getsourcefile
+import traceback
 
 import numpy as np
 
 import corner
-
 from matplotlib import use as mpl_use
 import matplotlib.pyplot as plt
 
@@ -123,182 +123,188 @@ if __name__ == "__main__":
         targets_count = len(list(targets_cfg.keys()))
 
         for tix, (target, config) in enumerate(targets_cfg.items(), start=1):
-            print("\n\n------------------------------------------------------------")
-            print(f"Processing target {tix} of {targets_count}: {target}")
-            print("------------------------------------------------------------", flush=True)
+            try:
+                print("\n\n------------------------------------------------------------")
+                print(f"Processing target {tix} of {targets_count}: {target}")
+                print("------------------------------------------------------------", flush=True)
 
 
-            # Create any missing config values
-            config.setdefault("search_term", target)
-            config.setdefault("Teff_sys", 10000)
-            config.setdefault("logg_sys", 4.0)
-            for ix in [1, 2]:
-                if f"logg{ix}" not in config:
-                    logg = log_g(ufloat(config[f"M{ix}"], config.get(f"M{ix}_err", 0)) * M_sun,
-                                ufloat(config[f"R{ix}"], config.get(f"R{ix}_err", 0)) * R_sun)
-                    config[f"logg{ix}"], config[f"logg{ix}_err"] = nom_val(logg), std_dev(logg)
-            for k in ["Teff", "logg"]:
-                if f"{k}R" not in config:
-                    nom1, nom2 = config[f"{k}1"], config[f"{k}2"]
-                    ratio = ufloat(nom2, config.get(f"{k}2_err", None) or nom2 * 0.05) \
-                            / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
-                    config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
+                # Create any missing config values
+                config.setdefault("search_term", target)
+                config.setdefault("Teff_sys", 10000)
+                config.setdefault("logg_sys", 4.0)
+                for ix in [1, 2]:
+                    if f"logg{ix}" not in config:
+                        logg = log_g(ufloat(config[f"M{ix}"], config.get(f"M{ix}_err", 0)) * M_sun,
+                                    ufloat(config[f"R{ix}"], config.get(f"R{ix}_err", 0)) * R_sun)
+                        config[f"logg{ix}"], config[f"logg{ix}_err"] = nom_val(logg), std_dev(logg)
+                for k in ["Teff", "logg"]:
+                    if f"{k}R" not in config:
+                        nom1, nom2 = config[f"{k}1"], config[f"{k}2"]
+                        ratio = ufloat(nom2, config.get(f"{k}2_err", None) or nom2 * 0.05) \
+                                / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
+                        config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
 
-            figs_dir = drop_dir / "figs" / to_file_safe_str(target)
-            figs_dir.mkdir(parents=True, exist_ok=True)
+                figs_dir = drop_dir / "figs" / to_file_safe_str(target)
+                figs_dir.mkdir(parents=True, exist_ok=True)
 
-            if not all(k in config for k in ["ruwe", "ra", "dec", "parallax"]):
-                print(f"Querying Gaia DR3 for coordinates and ruwe of {target}")
-                dr3_id = int(config["gaia_dr3_id"])
-                if _tbl := Gaia.launch_job("SELECT TOP 1 * FROM gaiadr3.gaia_source_lite WHERE" \
-                                        + f" source_id = {dr3_id}").get_results():
-                    config["ruwe"] = _tbl["ruwe"][0]
-                    config["ra"] = _tbl["ra"][0]                            # deg
-                    config["dec"] = _tbl["dec"][0]                          # deg
-                    config["parallax"] = _tbl["parallax"][0]
-                    config["parallax_err"] = _tbl["parallax_error"][0]
-
-
-            # Read the SED for this target, de-duplicate then apply any range and exclusion filters.
-            print(flush=True)
-            sed = get_sed_for_target(target, config["search_term"], radius=0.25,
-                                     remove_duplicates=True, verbose=True)
-
-            smask = np.ones((len(sed)), dtype=bool)
-            smask &= stellar_grid.has_filter(sed["sed_filter"])
-            smask &= np.isin(sed["sed_filter"], config.get("sed_filter_exclusions",[]), invert=True)
-            smask &= np.isin(sed["_tabname"], config.get("sed_tabname_exclusions", []), invert=True)
-            smask &= (sed["sed_wl"] >= min(stellar_grid.wavelength_range)) \
-                        & (sed["sed_wl"] <= max(stellar_grid.wavelength_range))
-            sed = sed[smask]
-
-            sed.sort(["sed_wl"])
-            print(f"{len(sed)} unique SED observation(s) remain after range & exclusion filtering.",
-                  "\nThe units for flux density, frequency and wavelength are:",
-                  ", ".join(f"{sed[f].unit:unicode}" for f in ["sed_flux", "sed_freq", "sed_wl"]))
-
-            fig = plot_sed(sed["sed_wl"].quantity, sed["sed_flux"].quantity,
-                           sed["sed_eflux"].quantity, fmts=[".r"], labels=["observed"],
-                           show_grid=True, title=target + " SED data")
-            fig.savefig(figs_dir / "sed-observations.pdf")
-            plt.close(fig)
+                if not all(k in config for k in ["ruwe", "ra", "dec", "parallax"]):
+                    print(f"Querying Gaia DR3 for coordinates and ruwe of {target}")
+                    dr3_id = int(config["gaia_dr3_id"])
+                    if _tbl := Gaia.launch_job("SELECT TOP 1 * FROM gaiadr3.gaia_source_lite " \
+                                            + f"WHERE source_id = {dr3_id}").get_results():
+                        config["ruwe"] = _tbl["ruwe"][0]
+                        config["ra"] = _tbl["ra"][0]                            # deg
+                        config["dec"] = _tbl["dec"][0]                          # deg
+                        config["parallax"] = _tbl["parallax"][0]
+                        config["parallax_err"] = _tbl["parallax_error"][0]
 
 
-            # Set up the priors and the ln_prior_func callback
-            TeffR_prior = ufloat(config["TeffR"], config["TeffR_err"])
-            radR_prior = ufloat(config["k"], config["k_err"])
-            loggR_prior = ufloat(config["loggR"], config["loggR_err"])
-            dist_prior =  1000 / ufloat(config["parallax"], config["parallax_err"])
-            if "Av" in config:
-                av_prior = ufloat(config["av"], config["av_err"])
-            elif "ebv" in config:
-                av_prior = ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv
-            else:
-                coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
-                                distance=1000 / config["parallax"] * u.pc, frame="icrs")
-                av_prior = ufloat(get_gontcharov_av(coords)[0], 0.04 * ext_model.Rv)
-                print(f"\nAv from the Gontcharov extinction map & target coords: {av_prior:.3f}")
+                # Read the SED for target, de-duplicate then apply any range and exclusion filters.
+                print(flush=True)
+                sed = get_sed_for_target(target, config["search_term"], radius=0.25,
+                                        remove_duplicates=True, verbose=True)
 
-            print(f"\nPriors: TeffR={TeffR_prior:.3f}, radR={radR_prior:.3f},",
-                  f"loggR={loggR_prior:.3f}, dist={dist_prior:.3f} [pc], av={av_prior:.3f}")
+                smask = np.ones((len(sed)), dtype=bool)
+                smask &= stellar_grid.has_filter(sed["sed_filter"])
+                smask &= ~np.isin(sed["sed_filter"], config.get("sed_filter_exclusions",[]))
+                smask &= ~np.isin(sed["_tabname"], config.get("sed_tabname_exclusions", []))
+                smask &= (sed["sed_wl"] >= min(stellar_grid.wavelength_range)) \
+                            & (sed["sed_wl"] <= max(stellar_grid.wavelength_range))
+                sed = sed[smask]
 
-            def ln_prior_func(theta: np.ndarray[float]) -> float:
-                """ fitting prior callback function to evaluate the current candidate theta """
-                # pylint: disable=cell-var-from-loop
-                Teffs, loggs, radii = theta[0:2], theta[2:4], theta[4:6]
-                dist, av = theta[-2], theta[-1]
+                sed.sort(["sed_wl"])
+                print(f"{len(sed)} unique SED observation(s) remain after range & exclusion",
+                    "filtering. \nThe units for flux density, frequency and wavelength are:",
+                    ", ".join(f"{sed[f].unit:unicode}" for f in ["sed_flux", "sed_freq", "sed_wl"]))
 
-                if not all(teff_limits[0] <= t <= teff_limits[1] for t in Teffs) or \
-                        not all(logg_limits[0] <= l <= logg_limits[1] for l in loggs) or \
-                        not all(radius_limits[0] <= r <= radius_limits[1] for r in radii) or \
-                        not 0 < dist or \
-                        not av_limits[0] <= av <= av_limits[1]:
-                    return -np.inf
-
-                ret_val = 0
-                ret_val += ((Teffs[1]/Teffs[0] - TeffR_prior.n) / TeffR_prior.s)**2
-                ret_val += ((radii[1]/radii[0] - radR_prior.n) / radR_prior.s)**2
-                if fit_logg:
-                    ret_val += ((loggs[1]/loggs[0] - loggR_prior.n) / loggR_prior.s)**2
-                ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
-                if fit_av:
-                    ret_val += ((av - av_prior.n) / av_prior.s)**2
-                return -0.5 * ret_val
+                fig = plot_sed(sed["sed_wl"].quantity, sed["sed_flux"].quantity,
+                            sed["sed_eflux"].quantity, fmts=[".r"], labels=["observed"],
+                            show_grid=True, title=target + " SED data")
+                fig.savefig(figs_dir / "sed-observations.pdf")
+                plt.close(fig)
 
 
-            # Initial Teffs, loggs & radii, modified by the ratio priors so they meet criteria
-            t0_Teffs = [config["Teff_sys"]] * 2
-            t0_loggs = [config["logg_sys"]] * 2
-            t0_radii = [t0_Teffs[0] / 5500] * 2
-            for t0, ratio in [
-                (t0_Teffs, nom_val(TeffR_prior)),
-                (t0_loggs, nom_val(loggR_prior)),
-                (t0_radii, nom_val(radR_prior)),
-            ]:
-                if ratio < 1:
-                    t0[1:] = [t * ratio for t in t0[1:]]
+                # Set up the priors and the ln_prior_func callback
+                TeffR_prior = ufloat(config["TeffR"], config["TeffR_err"])
+                radR_prior = ufloat(config["k"], config["k_err"])
+                loggR_prior = ufloat(config["loggR"], config["loggR_err"])
+                dist_prior =  1000 / ufloat(config["parallax"], config["parallax_err"])
+                if "Av" in config:
+                    av_prior = ufloat(config["av"], config["av_err"])
+                elif "ebv" in config:
+                    av_prior = ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv
                 else:
-                    t0[0] /= ratio
+                    coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
+                                    distance=1000 / config["parallax"] * u.pc, frame="icrs")
+                    av_prior = ufloat(get_gontcharov_av(coords)[0], 0.04 * ext_model.Rv)
+                    print(f"\nAv from the Gontcharov extinction map & target coord: {av_prior:.3f}")
 
-            if not fit_logg:
-                t0_loggs = [config["logg1"], config["logg2"]]
-            fit_mask = np.array([True, True, fit_logg, fit_logg, True, True,  True, fit_av], bool)
-            theta0 = create_theta(teffs=t0_Teffs, loggs=t0_loggs, radii=t0_radii,
-                                  dist=nom_val(dist_prior), av=nom_val(av_prior),
-                                  nstars=2, verbose=False)
+                print(f"\nPriors: TeffR={TeffR_prior:.3f}, radR={radR_prior:.3f},",
+                    f"loggR={loggR_prior:.3f}, dist={dist_prior:.3f} [pc], av={av_prior:.3f}")
 
+                def ln_prior_func(theta: np.ndarray[float]) -> float:
+                    """ fitting prior callback function to evaluate the current candidate theta """
+                    # pylint: disable=cell-var-from-loop
+                    Teffs, loggs, radii = theta[0:2], theta[2:4], theta[4:6]
+                    dist, av = theta[-2], theta[-1]
 
-            # Prepare the SED data for fitting
-            print("\nPreparing SED data for fitting with the fluxes coerced to units of",
-                f"{stellar_grid.flux_unit:unicode}, as used by {stellar_grid.__class__.__name__}.")
-            with u.set_enabled_equivalencies(u.spectral() \
-                                             + u.spectral_density(sed["sed_freq"].quantity)):
-                x = stellar_grid.get_filter_indices(sed["sed_filter"])
-                y = sed["sed_flux"].quantity.to(stellar_grid.flux_unit).value
-                y_err = sed["sed_eflux"].quantity.to(stellar_grid.flux_unit).value
+                    if not all(teff_limits[0] <= t <= teff_limits[1] for t in Teffs) or \
+                            not all(logg_limits[0] <= l <= logg_limits[1] for l in loggs) or \
+                            not all(radius_limits[0] <= r <= radius_limits[1] for r in radii) or \
+                            not 0 < dist or \
+                            not av_limits[0] <= av <= av_limits[1]:
+                        return -np.inf
 
-
-            # Quick minimize fit
-            print(flush=True)
-            theta_fit, _ = minimize_fit(x, y, y_err, theta0, fit_mask, stellar_grid, ln_prior_func,
-                                        methods=["Nelder-Mead"], verbose=True)
-            print("Fitted params from minimize fit. Those marked * were fitted.",
-                "Known/published values are in brackets.")
-            print_fitted_params(theta_fit, fit_mask, known_values_dict=config)
-
-            fig = plot_fitted_model(sed, theta_fit, stellar_grid, sed_flux_colname="sed_flux",
-                                    show_combined_spectrum=True, show_component_spectra=False,
-                                    show_grid=True, title=f"{target} SED and fitted model")
-            fig.savefig(figs_dir / "sed-min-fitted.pdf")
-            plt.close(fig)
+                    ret_val = 0
+                    ret_val += ((Teffs[1]/Teffs[0] - TeffR_prior.n) / TeffR_prior.s)**2
+                    ret_val += ((radii[1]/radii[0] - radR_prior.n) / radR_prior.s)**2
+                    if fit_logg:
+                        ret_val += ((loggs[1]/loggs[0] - loggR_prior.n) / loggR_prior.s)**2
+                    ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
+                    if fit_av:
+                        ret_val += ((av - av_prior.n) / av_prior.s)**2
+                    return -0.5 * ret_val
 
 
-            # Full MCMC sampling
-            print(flush=True)
-            nwalkers = 100
-            theta_mcmc, sampler = mcmc_fit(x, y, y_err, theta0, fit_mask, stellar_grid,
-                                           ln_prior_func=ln_prior_func,
-                                           nwalkers=nwalkers, nsteps=100000, processes=8,
-                                           early_stopping=True, early_stopping_from=10000,
-                                           progress=True, verbose=True)
+                # Initial Teffs, loggs & radii, modified by the ratio priors so they meet criteria
+                t0_Teffs = [config["Teff_sys"]] * 2
+                t0_loggs = [config["logg_sys"]] * 2
+                t0_radii = [t0_Teffs[0] / 5500] * 2
+                for t0, ratio in [
+                    (t0_Teffs, nom_val(TeffR_prior)),
+                    (t0_loggs, nom_val(loggR_prior)),
+                    (t0_radii, nom_val(radR_prior)),
+                ]:
+                    if ratio < 1:
+                        t0[1:] = [t * ratio for t in t0[1:]]
+                    else:
+                        t0[0] /= ratio
 
-            print("Fitted params from MCMC sampling. Those marked * were fitted.",
-                "Known/published values are in brackets.")
-            print_fitted_params(theta_mcmc, fit_mask, known_values_dict=config)
+                if not fit_logg:
+                    t0_loggs = [config["logg1"], config["logg2"]]
+                fit_mask = np.array([True, True, fit_logg, fit_logg, True, True,  True, fit_av])
+                theta0 = create_theta(teffs=t0_Teffs, loggs=t0_loggs, radii=t0_radii,
+                                    dist=nom_val(dist_prior), av=nom_val(av_prior),
+                                    nstars=2, verbose=False)
 
-            fig = plot_fitted_model(sed, theta_mcmc, stellar_grid, sed_flux_colname="sed_flux",
-                                    show_combined_spectrum=True, show_component_spectra=False,
-                                    show_grid=True, title=f"{target} SED and MCMC sampled model")
-            fig.savefig(figs_dir / "sed-mcmc-sampled.pdf")
-            plt.close(fig)
 
-            samples = samples_from_sampler(sampler, flat=True)
-            fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
-                                quantiles=[0.16, 0.5, 0.84], labels=theta_plot_labels[fit_mask],
-                                truths=nom_vals(theta_mcmc[fit_mask]))
-            fig.savefig(figs_dir / "sed-mcmc-corner.pdf")
-            plt.close(fig)
+                # Prepare the SED data for fitting
+                print("\nPreparing SED data for fitting with the fluxes coerced to the units",
+                      f"{stellar_grid.flux_unit:unicode} used by {stellar_grid.__class__.__name__}")
+                with u.set_enabled_equivalencies(u.spectral() \
+                                                + u.spectral_density(sed["sed_freq"].quantity)):
+                    x = stellar_grid.get_filter_indices(sed["sed_filter"])
+                    y = sed["sed_flux"].quantity.to(stellar_grid.flux_unit).value
+                    y_err = sed["sed_eflux"].quantity.to(stellar_grid.flux_unit).value
 
+
+                # Quick minimize fit
+                print(flush=True)
+                theta_fit, _ = minimize_fit(x, y, y_err, theta0, fit_mask, stellar_grid,
+                                            ln_prior_func, methods=["Nelder-Mead"], verbose=True)
+                print("Fitted params from minimize fit. Those marked * were fitted.",
+                    "Known/published values are in brackets.")
+                print_fitted_params(theta_fit, fit_mask, known_values_dict=config)
+
+                fig = plot_fitted_model(sed, theta_fit, stellar_grid, sed_flux_colname="sed_flux",
+                                        show_combined_spectrum=True, show_component_spectra=False,
+                                        show_grid=True, title=f"{target} SED and fitted model")
+                fig.savefig(figs_dir / "sed-min-fitted.pdf")
+                plt.close(fig)
+
+
+                # Full MCMC sampling
+                print(flush=True)
+                nwalkers = 100
+                theta_mcmc, sampler = mcmc_fit(x, y, y_err, theta0, fit_mask, stellar_grid,
+                                            ln_prior_func=ln_prior_func,
+                                            nwalkers=nwalkers, nsteps=100000, processes=8,
+                                            early_stopping=True, early_stopping_from=10000,
+                                            progress=True, verbose=True)
+
+                print("Fitted params from MCMC sampling. Those marked * were fitted.",
+                    "Known/published values are in brackets.")
+                print_fitted_params(theta_mcmc, fit_mask, known_values_dict=config)
+
+                fig = plot_fitted_model(sed, theta_mcmc, stellar_grid, sed_flux_colname="sed_flux",
+                                        show_combined_spectrum=True, show_component_spectra=False,
+                                        show_grid=True,title=f"{target} SED and MCMC sampled model")
+                fig.savefig(figs_dir / "sed-mcmc-sampled.pdf")
+                plt.close(fig)
+
+                samples = samples_from_sampler(sampler, flat=True)
+                fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
+                                    quantiles=[0.16, 0.5, 0.84], labels=theta_plot_labels[fit_mask],
+                                    truths=nom_vals(theta_mcmc[fit_mask]))
+                fig.savefig(figs_dir / "sed-mcmc-corner.pdf")
+                plt.close(fig)
+
+            except Exception as exc: # pylint: disable=broad-exception-caught
+                print(f"\n*** Failed to fit {target} with the following error... ***")
+                traceback.print_exception(exc, file=log)
+
+            log.flush()
 
         print("\n\n============================================================")
         print(f"Completed {THIS_STEM} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
