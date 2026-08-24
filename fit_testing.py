@@ -60,7 +60,9 @@ def print_fitted_params(theta: np.ndarray, mask: np.ndarray,
     for (param, unit), val, fitted in zip(labels, theta, mask):
         known = None
         if param in known_values_dict:
-            known = ufloat(known_values_dict[param], known_values_dict.get(f"{param}_err", 0))
+            known, known_err = known_values_dict[param], known_values_dict.get(f"{param}_err", None)
+            if known_err is not None:
+                known = ufloat(known, known_err)
         print(f"{param:>12s}{'*' if fitted else ' '} = {val:.3f} {unit:unicode}",
               f"\t ({known:.3f} {unit:unicode})" if known is not None else "")
     if "source" in known_values_dict:
@@ -127,8 +129,9 @@ if __name__ == "__main__":
                 config[f"logg{ix}"], config[f"logg{ix}_err"] = nom_val(logg), std_dev(logg)
         for k in ["Teff", "logg"]:
             if f"{k}R" not in config:
-                ratio = ufloat(config[f"{k}2"], config.get(f"{k}2_err", 0)) \
-                        / ufloat(config[f"{k}1"], config.get(f"{k}1_err", 0))
+                nom1, nom2 = config[f"{k}1"], config[f"{k}2"]
+                ratio = ufloat(nom2, config.get(f"{k}2_err", None) or nom2 * 0.05) \
+                        / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
                 config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
 
         figs_dir = drop_dir / "figs" / config["file_safe_target"]
