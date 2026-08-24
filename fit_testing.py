@@ -33,7 +33,7 @@ from support.extinction import get_gontcharov_av
 from support.sed import get_sed_for_target
 from support.plots import plot_sed, plot_fitted_model
 from support.tee import Tee
-from support.utils import to_file_safe_str, format_value
+from support.utils import to_file_safe_str, format_value, estimate_teff_from_spt
 
 from sed_fit.fitter import create_theta, minimize_fit, mcmc_fit
 from sed_fit.generic_fitter import samples_from_sampler
@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
                 # Create any missing config values
                 config.setdefault("search_term", target)
-                config.setdefault("Teff_sys", 10000)
+                config.setdefault("Teff_sys",nom_val(estimate_teff_from_spt(config.get("SpT","F"))))
                 config.setdefault("logg_sys", 4.0)
                 for ix in [1, 2]:
                     if f"logg{ix}" not in config:
