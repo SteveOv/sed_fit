@@ -4,7 +4,6 @@
 import warnings
 from pathlib import Path
 import json
-import re
 import argparse
 from datetime import datetime
 from contextlib import redirect_stdout
@@ -34,6 +33,7 @@ from support.extinction import get_gontcharov_av
 from support.sed import get_sed_for_target
 from support.plots import plot_sed, plot_fitted_model
 from support.tee import Tee
+from support.utils import to_file_safe_str, format_value
 
 from sed_fit.fitter import create_theta, minimize_fit, mcmc_fit
 from sed_fit.generic_fitter import samples_from_sampler
@@ -59,17 +59,16 @@ theta_labels = np.array([(f"Teff{st+1}", u.K) for st in range(2)] \
                         +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
 
 
-def print_fitted_params(theta: np.ndarray, mask: np.ndarray,
+def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
                         known_values_dict: dict, labels: np.ndarray=theta_labels):
     """ Pretty printer for fitted params in rows with known values in brackets."""
-    for (param, unit), val, fitted in zip(labels, theta, mask):
-        known = None
+    for (param, unit), val, fitted in zip(labels, theta, fitted_mask):
+        kval = None
         if param in known_values_dict:
-            known, known_err = known_values_dict[param], known_values_dict.get(f"{param}_err", None)
-            if known_err is not None:
-                known = ufloat(known, known_err)
-        print(f"{param:>12s}{'*' if fitted else ' '} = {val:.3f} {unit:unicode}",
-              f"\t ({known:.3f} {unit:unicode})" if known is not None else "")
+            kval, kerr = known_values_dict[param], known_values_dict.get(f"{param}_err", None)
+            if kerr is not None:
+                kval = ufloat(kval, kerr)
+        print(f"{param:>12s}{'*' if fitted else ' '} =", format_value(val, unit, kval))
     if "source" in known_values_dict:
         print("Source(s) of known values:", known_values_dict["source"])
     if "parallax_bibcode" in known_values_dict:
@@ -131,7 +130,6 @@ if __name__ == "__main__":
 
             # Create any missing config values
             config.setdefault("search_term", target)
-            config.setdefault("file_safe_target", re.sub(r"[^\w\d._-]", "-", target).lower())
             config.setdefault("Teff_sys", 10000)
             config.setdefault("logg_sys", 4.0)
             for ix in [1, 2]:
@@ -146,7 +144,7 @@ if __name__ == "__main__":
                             / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
                     config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
 
-            figs_dir = drop_dir / "figs" / config["file_safe_target"]
+            figs_dir = drop_dir / "figs" / to_file_safe_str(target)
             figs_dir.mkdir(parents=True, exist_ok=True)
 
             if not all(k in config for k in ["ruwe", "ra", "dec", "parallax"]):
