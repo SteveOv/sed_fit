@@ -46,7 +46,11 @@ mpl_use("agg")
 
 # Affects the StellarGrid flux calculations
 use_quick_mode = True
-fit_logg = False
+
+# Controls whether logg is fixed at known values (0), fitted to known values (1) or free fitted (2)
+fit_logg = 0
+
+# TODO: Controls whether we fit Av or we deredden the fluxes prior to fitting and fix Av at zero
 fit_av = True
 
 theta_plot_labels = np.array([f"$T_{{\\rm eff,{st+1}}} / {{\\rm K}}$" for st in range(2)] \
@@ -189,6 +193,10 @@ if __name__ == "__main__":
                 TeffR_prior = ufloat(config["TeffR"], config["TeffR_err"])
                 radR_prior = ufloat(config["k"], config["k_err"])
                 loggR_prior = ufloat(config["loggR"], config["loggR_err"])
+                logg_priors = [
+                    ufloat((n := config["logg1"]), config.get("logg1_err", None) or n * 0.05),
+                    ufloat((n := config["logg2"]), config.get("logg2_err", None) or n * 0.05)
+                ]
                 dist_prior =  1000 / ufloat(config["parallax"], config["parallax_err"])
                 if "Av" in config:
                     av_prior = ufloat(config["av"], config["av_err"])
@@ -199,9 +207,6 @@ if __name__ == "__main__":
                                     distance=1000 / config["parallax"] * u.pc, frame="icrs")
                     av_prior = ufloat(get_gontcharov_av(coords)[0], 0.04 * ext_model.Rv)
                     print(f"\nAv from the Gontcharov extinction map & target coord: {av_prior:.3f}")
-
-                print(f"\nPriors: TeffR={TeffR_prior:.3f}, radR={radR_prior:.3f},",
-                    f"loggR={loggR_prior:.3f}, dist={dist_prior:.3f} [pc], av={av_prior:.3f}")
 
                 def ln_prior_func(theta: np.ndarray[float]) -> float:
                     """ fitting prior callback function to evaluate the current candidate theta """
@@ -219,12 +224,23 @@ if __name__ == "__main__":
                     ret_val = 0
                     ret_val += ((Teffs[1]/Teffs[0] - TeffR_prior.n) / TeffR_prior.s)**2
                     ret_val += ((radii[1]/radii[0] - radR_prior.n) / radR_prior.s)**2
-                    if fit_logg:
+                    if fit_logg == 1:   # Fitted to known values constrained by uncertainties
+                        ret_val += ((loggs[0] - logg_priors[0].n) / logg_priors[0].s)**2
+                        ret_val += ((loggs[1] - logg_priors[1].n) / logg_priors[1].s)**2
+                    elif fit_logg == 2: # Fully free fitted, only constrained by a ratio (as Teffs)
                         ret_val += ((loggs[1]/loggs[0] - loggR_prior.n) / loggR_prior.s)**2
                     ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
                     if fit_av:
                         ret_val += ((av - av_prior.n) / av_prior.s)**2
                     return -0.5 * ret_val
+
+                logg_msg = ""
+                if fit_logg == 1:
+                    logg_msg = f"logg1={logg_priors[0]:.3f}, logg2={logg_priors[1]:.3f},"
+                elif fit_logg == 2:
+                    logg_msg = f"loggR={loggR_prior:.3f},"
+                print(f"\nPriors: TeffR={TeffR_prior:.3f}, radR={radR_prior:.3f}," + logg_msg,
+                      f"dist={dist_prior:.3f} [pc], av={av_prior:.3f}.")
 
 
                 # Initial Teffs, loggs & radii, modified by the ratio priors so they meet criteria
@@ -241,12 +257,16 @@ if __name__ == "__main__":
                     else:
                         t0[0] /= ratio
 
-                if not fit_logg:
+
+                # Set up the initial fitting position (theta0)
+                if fit_logg < 2: # If not free fitting logg override initial loggs to known values
                     t0_loggs = [config["logg1"], config["logg2"]]
-                fit_mask = np.array([True, True, fit_logg, fit_logg, True, True,  True, fit_av])
+                fit_mask = np.ones(shape=(8,), dtype=bool)
+                if fit_logg == 0:
+                    fit_mask[2:4] = False
                 theta0 = create_theta(teffs=t0_Teffs, loggs=t0_loggs, radii=t0_radii,
-                                    dist=nom_val(dist_prior), av=nom_val(av_prior),
-                                    nstars=2, verbose=False)
+                                      dist=nom_val(dist_prior), av=nom_val(av_prior),
+                                      nstars=2, verbose=False)
 
 
                 # Prepare the SED data for fitting
