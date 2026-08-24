@@ -326,12 +326,12 @@ if __name__ == "__main__":
 
                 # Full MCMC sampling
                 print(flush=True)
-                nwalkers = 100
+                nwalkers, thin_by = 100, 1
                 theta_mcmc, sampler = mcmc_fit(x, y, y_err, theta0, fit_mask, stellar_grid,
-                                            ln_prior_func=ln_prior_func,
-                                            nwalkers=nwalkers, nsteps=100000, processes=8,
-                                            early_stopping=True, early_stopping_from=10000,
-                                            progress=True, verbose=True)
+                                               ln_prior_func=ln_prior_func, thin_by=thin_by,
+                                               nwalkers=nwalkers, nsteps=100000, processes=8,
+                                               early_stopping=True, early_stopping_from=10000,
+                                               progress=True, verbose=True)
 
                 print("Fitted params from MCMC sampling. Those marked * were fitted.",
                     "Known/published values are in brackets.")
