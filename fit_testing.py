@@ -108,7 +108,7 @@ if __name__ == "__main__":
     with open(targets_config_file, mode="r", encoding="utf8") as f:
         full_dict = json.load(f)
         targets_cfg = { k: c for k, c in full_dict.items()
-                       if (args.target is None and c.get("enabled", True)) or k == args.target }
+                    if (args.target is None and not c.get("exclude", False)) or k == args.target }
     targets_count = len(list(targets_cfg.keys()))
 
     for tix, (target, config) in enumerate(targets_cfg.items(), start=1):
