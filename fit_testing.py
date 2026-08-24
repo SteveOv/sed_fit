@@ -83,7 +83,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="The sed_fit esting module for known targets.")
     ap.add_argument("-t", "--target", dest="target", type=str, required=False,
                     help="a single target id from the targets file to be fitted or re-fitted")
-    ap.set_defaults(target=None)
+    ap.add_argument("-mo", "--mcmc-off", dest="mcmc_off", action="store_true", required=False,
+                    help="suppress running of MCMC for parameters")
+    ap.set_defaults(target=None, mcmc_off=False)
     args = ap.parse_args()
 
     drop_dir = Path.cwd() / "drop/testing"
@@ -292,6 +294,11 @@ if __name__ == "__main__":
                                         show_grid=True, title=f"{target} SED and fitted model")
                 fig.savefig(figs_dir / "sed-min-fitted.pdf")
                 plt.close(fig)
+
+
+                if args.mcmc_off:
+                    print("\nSkipping MCMC sampling.")
+                    continue
 
 
                 # Full MCMC sampling
