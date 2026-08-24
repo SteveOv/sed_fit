@@ -22,7 +22,8 @@ from uncertainties import ufloat, nominal_value as nom_val, std_dev
 from uncertainties.unumpy import nominal_values as nom_vals
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from astropy.constants.iau2015 import M_sun, R_sun
+from astropy.constants.iau2015 import M_sun, R_sun, L_sun
+from astropy.constants import sigma_sb
 from astroquery.gaia import Gaia
 
 from dust_extinction.parameter_averages import G23
@@ -31,7 +32,7 @@ from deblib.stellar import log_g
 
 from support.extinction import get_gontcharov_av
 from support.sed import get_sed_for_target
-from support.plots import plot_sed, plot_fitted_model
+from support.plots import plot_sed, plot_fitted_model, plot_hr_diagram
 from support.tee import Tee
 from support.utils import to_file_safe_str, format_value, estimate_teff_from_spt
 
@@ -359,6 +360,18 @@ if __name__ == "__main__":
                 traceback.print_exception(exc, file=log)
 
             log.flush()
+
+
+        # H-R Plots.
+        fit_thetas = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", comments="#")
+        Teffs = np.array([fit_thetas["Teff1"], fit_thetas["Teff2"]])
+        radii = np.array([fit_thetas["R1"], fit_thetas["R2"]])
+        lums = ((4 * np.pi * (radii * R_sun)**2 * sigma_sb * Teffs**4) / L_sun).value
+        fig = plot_hr_diagram(Teffs, lums, labels=["star 1", "star 2"],
+                              plot_zams=True, legend_loc="best", invertx=True)
+        fig.savefig(drop_dir / "figs/h-r-min.pdf")
+        plt.close(fig)
+
 
         print("\n\n============================================================")
         print(f"Completed {THIS_STEM} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")

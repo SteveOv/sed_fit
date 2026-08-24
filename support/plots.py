@@ -3,9 +3,12 @@
 from typing import Tuple, List, Union
 from itertools import cycle
 from numbers import Number
+from pathlib import Path
+from inspect import getsourcefile
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.interpolate import make_interp_spline
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure as _Figure
@@ -15,14 +18,18 @@ from matplotlib.axes import Axes as _Axes
 import astropy.units as u
 from astropy.table import Table
 
-from uncertainties.unumpy import nominal_values
+from uncertainties.unumpy import nominal_values, std_devs
 
 from sed_fit.stellar_grids import SvoStellarGrid
 from sed_fit.fitter import model_func, iterate_theta
 
+from .data.mist.read_mist_models import ISO
+
 # Units for the wavelemgth (x) and flux (y) axes
 lam_unit = u.um
 flux_unit = u.W / u.m**2
+
+_this_dir = Path(getsourcefile(lambda:0)).parent
 
 def plot_sed(x: u.Quantity,
              fluxes: List[u.Quantity],
@@ -216,6 +223,67 @@ def plot_sed_on_axes(ax: _Axes,
                             mew=0.75, elinewidth=0.75, alpha=alpha, label=label)
 
 
+def plot_hr_diagram(teffs: ArrayLike,
+                    luminosities: ArrayLike,
+                    labels: ArrayLike=None,
+                    plot_zams: bool=False,
+                    **format_kwargs) -> _Figure:
+    """
+    Plots a log(L) vs log(T_eff) Hertzsprung-Russell diagram with an optional ZAMS line.
+    Returns the figure of the plot for the calling code to show or save.
+
+    :teffs: mass values to plot on the x-axis in shape (#sets, #teffs) or (#teffs) for 1 set
+    :luminosities: radius values to plot on the y-axis in shape (#sets, #lums) or (#lums) for 1 set
+    :labels: optional labels text for each set (if multiple sets) or item (if a single set)
+    :plot_zams: whether or not to include a zero age main-sequence line on the figure
+    :format_kwargs: kwargs to be passed on to format_axes()
+    :returns: the Figure
+    """
+    # Masses & radii both support multiple sets, but they must be the same shape
+    if teffs.shape != luminosities.shape:
+        raise ValueError("teffs and luminosities are not of the same shape")
+    if labels is not None and len(labels) != teffs.shape[0]:
+        raise ValueError("labels do not match the teffs or luminosities")
+
+    # Smaller markers the more items there are to be plotted
+    ms = max(1, 5 - np.log10(teffs.shape[-1]))
+
+    teff_noms, teff_errs = nominal_values(teffs), std_devs(teffs)
+    lum_noms, lum_errs = nominal_values(luminosities), std_devs(luminosities)
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
+    labels = labels or [None] * teffs.shape[0]
+    for ix, (teffn, teffe, lumn, lume, label) in enumerate(zip(teff_noms, teff_errs,
+                                                               lum_noms, lum_errs, labels)):
+        ax.errorbar(x=teffn, xerr=teffe, y=lumn, yerr=lume,
+                    fmt="o", ms=ms, lw=0.5, markeredgewidth=0.5,
+                    fillstyle="full", zorder=-ix, label=label)
+
+    xlim = (min(3000, max(np.min(teff_noms)*0.66, 1e-3)), max(20000, np.max(teff_noms)*2.0))
+    ylim = (min(0.001, max(np.min(lum_noms)*0.66, 1e-3)), max(5000, np.max(lum_noms)*2.0))
+    ax.set(xlabel=r"$\log{(T_{\rm eff}\,/\,{\rm K})}$", xscale="log", xlim=xlim,
+           ylabel=r"$\log{(L\,/\,{\rm L_{\odot}})}$", yscale="log", ylim=ylim)
+
+    xticks = [x for x in [3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8] if min(xlim)<10**x<max(xlim)]
+    ax.set_xticks([10**x for x in xticks], minor=False)
+    ax.set_xticklabels(xticks, minor=False)
+
+    yticks = [y for y in [-3, -2, -1, 0, 1, 2, 3, 4, 5] if min(ylim)<10**y<max(ylim)]
+    ax.set_yticks([10**y for y in yticks], minor=False)
+    ax.set_yticklabels(yticks, minor=False)
+
+    if plot_zams:
+        zams = _get_solar_isochrone_eep_values(eep=202, phase=0.0, cols=["log_Teff", "log_L"])
+        zteff = np.linspace(zams[0].min(), zams[0].max(), 250)
+        zsort = np.argsort(zams[0])
+        zlum = make_interp_spline(zams[0, zsort], zams[1, zsort], k=1)(zteff) # smoothing
+        ax.plot(10**zteff, 10**zlum, ls="--", lw=1, c="k", zorder=-100, alpha=0.5, label="ZAMS")
+
+    format_axes(ax, **format_kwargs)
+    ax.tick_params(axis="x", which="minor", top=False, bottom=False, labelbottom=False)
+    return fig
+
+
 def format_axes(ax: _Axes, title: str=None,
                 xlabel: str=None, ylabel: str=None,
                 xticklable_top: bool=False, yticklabel_right: bool=False,
@@ -283,3 +351,24 @@ def _cycle_for(init_list: List, num_items: int):
         if i == num_items:
             break
         yield v
+
+
+def _get_solar_isochrone_eep_values(eep: int, phase: int, cols: List[str]) -> ArrayLike:
+    """
+    Gets the requested column values from the solar metallicity MIST isochrone,
+    searching by eep and phase.
+
+    Common eep values are 202 (ZAMS) & 453 (TAMS) with phase 0.0
+
+    :iso: the MIST ISO to search
+    :eep: the eep (equivalent evolutionary point) to find across the iso
+    :phase: the phase to find across the iso, where 0.0 is main-sequence
+    :cols: the columns to return the values for
+    :returns: the requested data
+    """
+    iso_file = _this_dir / "data/mist/MIST_v1.2_vvcrit0.4_basic_isos" \
+                        / "MIST_v1.2_feh_p0.00_afe_p0.0_vvcrit0.4_basic.iso"
+    iso = ISO(str(iso_file), verbose=False)
+
+    rows = (ab[(ab["EEP"]==eep) & (ab["phase"]==phase)] for ab in iso.isos if eep in ab["EEP"])
+    return np.array([list(row[0][cols]) for row in rows if len(row) > 0]).transpose()
