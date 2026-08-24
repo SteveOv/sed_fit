@@ -81,11 +81,11 @@ def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="The sed_fit esting module for known targets.")
-    ap.add_argument("-t", "--target", dest="target", type=str, required=False,
-                    help="a single target id from the targets file to be fitted or re-fitted")
+    ap.add_argument("-t", "--targets", dest="targets", type=str, required=False, nargs="+",
+                    help="specific target from the targets file to be fitted (overrides exclude)")
     ap.add_argument("-mo", "--mcmc-off", dest="mcmc_off", action="store_true", required=False,
                     help="suppress running of MCMC for parameters")
-    ap.set_defaults(target=None, mcmc_off=False)
+    ap.set_defaults(targets=[], mcmc_off=False)
     args = ap.parse_args()
 
     drop_dir = Path.cwd() / "drop/testing"
@@ -124,8 +124,10 @@ if __name__ == "__main__":
         targets_config_file = Path.cwd() / "config" / "fitting-a-sed-targets.json"
         with open(targets_config_file, mode="r", encoding="utf8") as f:
             full_dict = json.load(f)
-            targets_cfg = { k: c for k, c in full_dict.items()
-                    if (args.target is None and not c.get("exclude", False)) or k == args.target }
+            if args.targets is not None and len(args.targets) > 0:
+                targets_cfg = { k: full_dict[k] for k in args.targets if k in full_dict }
+            else:
+                targets_cfg = { k: c for k, c in full_dict.items() if not c.get("exclude", False) }
         targets_count = len(list(targets_cfg.keys()))
 
         for tix, (target, config) in enumerate(targets_cfg.items(), start=1):
