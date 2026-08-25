@@ -80,7 +80,8 @@ if __name__ == "__main__":
     ap.add_argument ("-o", "--overwrite", dest="overwrite", action="store_true", required=False,
                      help="force overwrite of existing log and csv files (otherwise append)")
     # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
-    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True)
+    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True,
+                    use_av_override=False)
     args = ap.parse_args()
     run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
 
@@ -222,7 +223,9 @@ if __name__ == "__main__":
                 value_priors = [ufloat(config[f"{k}{i}"], config.get(f"{k}{i}_err", None) or 0)
                                                     for k in ["Teff", "logg", "R"] for i in [1, 2]]
                 value_priors += [1000 / ufloat(config["parallax"], config["parallax_err"])]
-                if "av" in config:
+                if "av_override" in config and args.use_av_override:
+                    value_priors += [ufloat(config["av_override"], 0.05)]
+                elif "av" in config:
                     value_priors += [ufloat(config["av"], config["av_err"])]
                 elif "ebv" in config:
                     value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
