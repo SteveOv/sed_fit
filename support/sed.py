@@ -23,6 +23,7 @@ def get_sed_for_target(target: str,
                        freq_unit=u.Hz,
                        wl_unit=u.micron,
                        retries: int=2,
+                       host: str="https://vizier.cds.unistra.fr",
                        verbose: bool=False) -> Table:
     """
     Gets spectral energy distribution (SED) observations for the target. These data are found and
@@ -49,6 +50,7 @@ def get_sed_for_target(target: str,
     :freq_unit: the unit of the returned sed_freq field
     :wl_unit: the unit of the returned sed_wl field
     :retries: the number of retries if we get time outs when calling the VizieR SED service
+    :host: service host
     :verbose: whether to output diagnostics messages
     :returns: an astropy Table containing the chosen data, sorted by descending frequency
     """
@@ -64,7 +66,7 @@ def get_sed_for_target(target: str,
         for attempt in range(1, max_attempts+1):
             try:
                 c = quote_plus(search_term or target)
-                sed = Table.read(f"https://vizier.cds.unistra.fr/viz-bin/sed?-c={c}&-c.rs={radius}")
+                sed = Table.read(f"{host}/viz-bin/sed?-c={c}&-c.rs={radius}&-out.add=_r")
                 sed.write(sed_fname, format="votable", overwrite=True)
             except TimeoutError as e:
                 if attempt >= max_attempts:
