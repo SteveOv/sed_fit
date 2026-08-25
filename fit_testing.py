@@ -42,17 +42,9 @@ from sed_fit.stellar_grids import StellarGrid
 
 THIS_STEM = Path(getsourcefile(lambda: 0)).stem
 
-# Use a non-interactive matplotlib backend to avoid threading errors (issue #36).
+# Use a non-interactive matplotlib backend to avoid threading errors.
 mpl_use("agg")
 
-# Affects the StellarGrid flux calculations
-use_quick_mode = True
-
-# Controls whether logg is fixed at known values (0), fitted to known values (1) or free fitted (2)
-fit_logg = 0
-
-# TODO: Controls whether we fit Av or we deredden the fluxes prior to fitting and fix Av at zero
-fit_av = True
 
 theta_plot_labels = np.array([f"$T_{{\\rm eff,{st+1}}} / {{\\rm K}}$" for st in range(2)] \
                             +[f"$\\log{{g}}_{{\\rm {st+1}}}$" for st in range(2)] \
@@ -88,7 +80,11 @@ if __name__ == "__main__":
                     help="suppress running of MCMC for parameters")
     ap.add_argument ("-o", "--overwrite", dest="overwrite", action="store_true", required=False,
                      help="force overwrite of existing log and csv files (otherwise append)")
-    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False)
+    # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
+    # fit_logg ccontrols whether logg fixed at known vals (0), fitted to known vals (1) or free (2)
+    # fit_av to controls whether we fit Av or deredden the fluxes prior to fitting & fix Av at zero
+    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False,
+                    use_quick_mode=True, fit_logg=0, fit_av=True)
     args = ap.parse_args()
 
     drop_dir = Path.cwd() / "drop/testing"
@@ -122,7 +118,7 @@ if __name__ == "__main__":
 
         # BtSettlGrid & KuruczGrid available. The former has better coverage but is slower/larger.
         stellar_grid = StellarGrid.get_instance("BtSettlGrid", extinction_model=ext_model,
-                                                use_quick_mode=use_quick_mode,
+                                                use_quick_mode=args.use_quick_mode,
                                                 interp_method="slinear", verbose=True)
         print(f"Loaded {stellar_grid.__class__.__name__} covering the ranges:")
         print(f"wavelength {stellar_grid.wavelength_range * stellar_grid.wavelength_unit:unicode},",
@@ -246,20 +242,20 @@ if __name__ == "__main__":
                     ret_val = 0
                     ret_val += ((Teffs[1]/Teffs[0] - TeffR_prior.n) / TeffR_prior.s)**2
                     ret_val += ((radii[1]/radii[0] - radR_prior.n) / radR_prior.s)**2
-                    if fit_logg == 1:   # Fitted to known values constrained by uncertainties
+                    if args.fit_logg == 1:   # Fitted to known values constrained by uncertainties
                         ret_val += ((loggs[0] - logg_priors[0].n) / logg_priors[0].s)**2
                         ret_val += ((loggs[1] - logg_priors[1].n) / logg_priors[1].s)**2
-                    elif fit_logg == 2: # Fully free fitted, only constrained by a ratio (as Teffs)
+                    elif args.fit_logg == 2: # Free fitted, only constrained by a ratio (as Teffs)
                         ret_val += ((loggs[1]/loggs[0] - loggR_prior.n) / loggR_prior.s)**2
                     ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
-                    if fit_av:
+                    if args.fit_av:
                         ret_val += ((av - av_prior.n) / av_prior.s)**2
                     return -0.5 * ret_val
 
                 logg_msg = ""
-                if fit_logg == 1:
+                if args.fit_logg == 1:
                     logg_msg = f"logg1={logg_priors[0]:.3f}, logg2={logg_priors[1]:.3f},"
-                elif fit_logg == 2:
+                elif args.fit_logg == 2:
                     logg_msg = f"loggR={loggR_prior:.3f},"
                 print(f"\nPriors: TeffR={TeffR_prior:.3f}, radR={radR_prior:.3f}," + logg_msg,
                       f"dist={dist_prior:.3f} [pc], av={av_prior:.3f}.")
@@ -281,10 +277,10 @@ if __name__ == "__main__":
 
 
                 # Set up the initial fitting position (theta0)
-                if fit_logg < 2: # If not free fitting logg override initial loggs to known values
+                if args.fit_logg < 2: # If not free fit of logg override initial val to known values
                     t0_loggs = [config["logg1"], config["logg2"]]
                 fit_mask = np.ones(shape=(8,), dtype=bool)
-                if fit_logg == 0:
+                if args.fit_logg == 0:
                     fit_mask[2:4] = False
                 theta0 = create_theta(teffs=t0_Teffs, loggs=t0_loggs, radii=t0_radii,
                                       dist=nom_val(dist_prior), av=nom_val(av_prior),
