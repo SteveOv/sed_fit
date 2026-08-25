@@ -7,7 +7,7 @@ import json
 import argparse
 from datetime import datetime
 from contextlib import redirect_stdout
-from inspect import getsourcefile
+from sys import orig_argv
 import traceback
 
 import numpy as np
@@ -40,7 +40,6 @@ from sed_fit.fitter import create_theta, minimize_fit, mcmc_fit
 from sed_fit.generic_fitter import samples_from_sampler
 from sed_fit.stellar_grids import StellarGrid
 
-THIS_STEM = Path(getsourcefile(lambda: 0)).stem
 
 # Use a non-interactive matplotlib backend to avoid threading errors.
 mpl_use("agg")
@@ -86,29 +85,30 @@ if __name__ == "__main__":
     ap.set_defaults(targets=[], mcmc_off=False, overwrite=False,
                     use_quick_mode=True, fit_logg=0, fit_av=True)
     args = ap.parse_args()
+    run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
 
     drop_dir = Path.cwd() / "drop/testing"
     figs_dir = drop_dir / "figs"
     figs_dir.mkdir(parents=True, exist_ok=True)
-    log_file = drop_dir / f"{THIS_STEM}.log"
+    log_file = drop_dir / f"{Path(ap.prog).stem}.log"
     if args.overwrite:
         log_file.unlink(missing_ok=True)
 
     with redirect_stdout(Tee(open(log_file, "a", encoding="utf8"))) as log:
         print("\n============================================================")
-        print(f"Started {THIS_STEM} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
+        print(f"Started {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
         print("============================================================")
+        print(f"Command: {' '.join(orig_argv)}")
         print(f"Directory for data, logs & plots: {drop_dir}\n", flush=True)
 
         # Set up the CSV files that will hold the results
-        fit_csv, mcmc_csv = drop_dir / "min-thetas.csv", drop_dir / "mcmc-thetas.csv"
-        if args.overwrite:
-            fit_csv.unlink(missing_ok=True)
-            mcmc_csv.unlink(missing_ok=True)
-        if not fit_csv.exists():
-            fit_csv.write_text("#target," +",".join(l for  l,_ in theta_labels) +"\n")
-        if not mcmc_csv.exists():
-            mcmc_csv.write_text("#target," +",".join(f"{l},{l}_err" for  l,_ in theta_labels) +"\n")
+        fit_csv, mcmc_csv = drop_dir / "min-results.csv", drop_dir / "mcmc-results.csv"
+        for file, head_fmt in [(fit_csv, r"{0}"), (mcmc_csv, r"{0},{0}_err")]:
+            if not "mcmc" in file.name or not args.mcmc_off:
+                with open(file, mode=("w" if args.overwrite else "a"), encoding="utf8") as f:
+                    # OK to append headers as they're comments and should be ignored if in the body
+                    f.write("#target," + ",".join(head_fmt.format(l) for l,_ in theta_labels) +"\n")
+                    f.write("# " + run_details +"\n")
 
         # Extinction model: G23 (Gordon et al., 2023) Milky Way R(V) filter gives broadest coverage
         ext_model = G23(Rv=3.1)
@@ -384,5 +384,5 @@ if __name__ == "__main__":
             plt.close(fig)
 
         print("\n\n============================================================")
-        print(f"Completed {THIS_STEM} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
+        print(f"Completed {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
         print("============================================================")
