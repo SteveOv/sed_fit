@@ -36,7 +36,7 @@ from support.plots import plot_sed, plot_fitted_model, plot_hr_diagram
 from support.tee import Tee
 from support.utils import to_file_safe_str, format_value, estimate_teff_from_spt
 
-from sed_fit.fitter import create_theta, minimize_fit, mcmc_fit
+from sed_fit.fitter import minimize_fit, mcmc_fit
 from sed_fit.generic_fitter import samples_from_sampler
 from sed_fit.stellar_grids import StellarGrid
 
@@ -80,12 +80,16 @@ if __name__ == "__main__":
     ap.add_argument ("-o", "--overwrite", dest="overwrite", action="store_true", required=False,
                      help="force overwrite of existing log and csv files (otherwise append)")
     # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
-    # fit_logg ccontrols whether logg fixed at known vals (0), fitted to known vals (1) or free (2)
-    # fit_av to controls whether we fit Av or deredden the fluxes prior to fitting & fix Av at zero
-    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False,
-                    use_quick_mode=True, fit_logg=0, fit_av=True)
+    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True)
     args = ap.parse_args()
     run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
+
+    # Summarise what is to be fitted and how. Slices are useful shortcut to subset of flags/theta.
+    # fit_(Teff|loggs|radii) controls whether fixed at known vals (0), fitted to known vals (1)
+    #   or free and constrained by ratio (2)
+    #              fit:  Teffs   loggs   radii   dist  Av
+    fit_flags = np.array([2]*2 + [0]*2 + [2]*2 + [1] + [1], dtype=int)
+    fit_slices = np.array([slice(0, 2), slice(2, 4), slice(4, 6), slice(6, 7), slice(7, 8)])
 
     drop_dir = Path.cwd() / "drop/testing"
     figs_dir = drop_dir / "figs"
@@ -182,6 +186,7 @@ if __name__ == "__main__":
                         config["parallax_err"] = _tbl["parallax_error"][0]
 
 
+
                 # Read the SED for target, de-duplicate then apply any range and exclusion filters.
                 print(flush=True)
                 sed = get_sed_for_target(target, config["search_term"], radius=0.25,
@@ -207,84 +212,75 @@ if __name__ == "__main__":
                 plt.close(fig)
 
 
-                # Set up the priors and the ln_prior_func callback
-                TeffR_prior = ufloat(config["TeffR"], config["TeffR_err"])
-                radR_prior = ufloat(config["k"], config["k_err"])
-                loggR_prior = ufloat(config["loggR"], config["loggR_err"])
-                logg_priors = [
-                    ufloat((n := config["logg1"]), config.get("logg1_err", None) or n * 0.05),
-                    ufloat((n := config["logg2"]), config.get("logg2_err", None) or n * 0.05)
-                ]
-                dist_prior =  1000 / ufloat(config["parallax"], config["parallax_err"])
+
+                # Set up the priors and the ln_prior_func.
+                # Always setup both ratios & values, reading them from config.
+                ratio_priors = []
+                for k in ["TeffR", "loggR", "k"]:
+                    ratio_priors += [None, ufloat(config[k], config[f"{k}_err"])]
+
+                value_priors = [ufloat(config[f"{k}{i}"], config.get(f"{k}{i}_err", None) or 0)
+                                                    for k in ["Teff", "logg", "R"] for i in [1, 2]]
+                value_priors += [1000 / ufloat(config["parallax"], config["parallax_err"])]
                 if "Av" in config:
-                    av_prior = ufloat(config["av"], config["av_err"])
+                    value_priors += [ufloat(config["av"], config["av_err"])]
                 elif "ebv" in config:
-                    av_prior = ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv
+                    value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
                 else:
                     coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
-                                    distance=1000 / config["parallax"] * u.pc, frame="icrs")
-                    av_prior = ufloat(get_gontcharov_av(coords)[0], 0.04 * ext_model.Rv)
-                    print(f"\nAv from the Gontcharov extinction map & target coord: {av_prior:.3f}")
+                                      distance=1000 / config["parallax"] * u.pc, frame="icrs")
+                    value_priors += [Av:=ufloat(get_gontcharov_av(coords)[0], 0.04 * ext_model.Rv)]
+                    print(f"\nAv from the Gontcharov extinction map & target coords: {Av:.3f}")
+
+                for ix, vp in enumerate(value_priors): # Set any missing uncertainties to 5%
+                    if not std_dev(vp):
+                        value_priors[ix] = ufloat(nom_val(vp), nom_val(vp) * 0.05)
+
+                # Print out the chosen prior values
+                msg = ""
+                for k, sl in zip(["Teff", "logg", "rad", "dist", "av"], fit_slices):
+                    if all(fit_flags[sl] == 2):
+                        msg += f"{k}R={ratio_priors[sl.stop-1]:.3f}, "
+                    elif all(fit_flags[sl] == 1):
+                        if sl.stop - sl.start == 1:
+                            msg += f"{k}={value_priors[sl.start]:.3f}, "
+                        else:
+                            for i, vp in enumerate(value_priors[sl]):
+                                msg += f"{k}{i+1}={vp:.3f}, "
+                print("\nPriors:", msg.rstrip(", "))
 
                 def ln_prior_func(theta: np.ndarray[float]) -> float:
                     """ fitting prior callback function to evaluate the current candidate theta """
                     # pylint: disable=cell-var-from-loop
-                    Teffs, loggs, radii = theta[0:2], theta[2:4], theta[4:6]
-                    dist, av = theta[-2], theta[-1]
-
-                    if not all(teff_limits[0] <= t <= teff_limits[1] for t in Teffs) or \
-                            not all(logg_limits[0] <= l <= logg_limits[1] for l in loggs) or \
-                            not all(radius_limits[0] <= r <= radius_limits[1] for r in radii) or \
-                            not 0 < dist or \
-                            not av_limits[0] <= av <= av_limits[1]:
+                    if not all(teff_limits[0] <= t <= teff_limits[1] for t in theta[0:2]) \
+                        or not all(logg_limits[0] <= l <= logg_limits[1] for l in theta[2:4]) \
+                        or not all(radius_limits[0] <= r <= radius_limits[1] for r in theta[4:6]) \
+                        or not 0 < theta[-2] \
+                        or not av_limits[0] <= theta[-1] <= av_limits[1]:
                         return -np.inf
 
+                    # fit_flags: 0|False fixed so no prior, 1|True val+/-err prior, 2 ratio prior
                     ret_val = 0
-                    ret_val += ((Teffs[1]/Teffs[0] - TeffR_prior.n) / TeffR_prior.s)**2
-                    ret_val += ((radii[1]/radii[0] - radR_prior.n) / radR_prior.s)**2
-                    if args.fit_logg == 1:   # Fitted to known values constrained by uncertainties
-                        ret_val += ((loggs[0] - logg_priors[0].n) / logg_priors[0].s)**2
-                        ret_val += ((loggs[1] - logg_priors[1].n) / logg_priors[1].s)**2
-                    elif args.fit_logg == 2: # Free fitted, only constrained by a ratio (as Teffs)
-                        ret_val += ((loggs[1]/loggs[0] - loggR_prior.n) / loggR_prior.s)**2
-                    ret_val += ((dist - dist_prior.n) / dist_prior.s)**2
-                    if args.fit_av:
-                        ret_val += ((av - av_prior.n) / av_prior.s)**2
+                    for ti, fit_flag in enumerate(fit_flags):
+                        if fit_flag == 1:
+                            # Simple sigma constraint
+                            ret_val += ((theta[ti] - value_priors[ti].n) / value_priors[ti].s)**2
+                        elif fit_flag == 2 and (ratio_prior := ratio_priors[ti]):
+                            # Ratio constraint. Ignore primary which has a ratio prior of None
+                            ret_val += ((theta[ti]/theta[ti-1] - ratio_prior.n) / ratio_prior.s)**2
                     return -0.5 * ret_val
 
-                logg_msg = ""
-                if args.fit_logg == 1:
-                    logg_msg = f"logg1={logg_priors[0]:.3f}, logg2={logg_priors[1]:.3f},"
-                elif args.fit_logg == 2:
-                    logg_msg = f"loggR={loggR_prior:.3f},"
-                print(f"\nPriors: TeffR={TeffR_prior:.3f}, radR={radR_prior:.3f}," + logg_msg,
-                      f"dist={dist_prior:.3f} [pc], av={av_prior:.3f}.")
 
 
-                # Initial Teffs, loggs & radii, modified by the ratio priors so they meet criteria
-                t0_Teffs = [config["Teff_sys"]] * 2
-                t0_loggs = [config["logg_sys"]] * 2
-                t0_radii = [t0_Teffs[0] / 5500] * 2
-                for t0, ratio in [
-                    (t0_Teffs, nom_val(TeffR_prior)),
-                    (t0_loggs, nom_val(loggR_prior)),
-                    (t0_radii, nom_val(radR_prior)),
-                ]:
-                    if ratio < 1:
-                        t0[1:] = [t * ratio for t in t0[1:]]
-                    else:
-                        t0[0] /= ratio
+                # Initial Teffs, loggs & radii. If free fit, we use sys val modified by ratio priors
+                fit_mask = fit_flags > 0
+                theta0 = nom_vals(value_priors)
+                for k, sl in zip(["Teff", "logg", "R"], fit_slices[:3]):
+                    if all(fit_flags[sl] == 2):
+                        ratio = nom_val(ratio_priors[sl.stop-1])
+                        t0 = t0 = config["Teff_sys"] / 5500 if k == "R" else config[f"{k}_sys"]
+                        theta0[sl] = (t0, t0*ratio) if ratio < 1 else (t0/ratio, t0)
 
-
-                # Set up the initial fitting position (theta0)
-                if args.fit_logg < 2: # If not free fit of logg override initial val to known values
-                    t0_loggs = [config["logg1"], config["logg2"]]
-                fit_mask = np.ones(shape=(8,), dtype=bool)
-                if args.fit_logg == 0:
-                    fit_mask[2:4] = False
-                theta0 = create_theta(teffs=t0_Teffs, loggs=t0_loggs, radii=t0_radii,
-                                      dist=nom_val(dist_prior), av=nom_val(av_prior),
-                                      nstars=2, verbose=False)
 
 
                 # Prepare the SED data for fitting
@@ -295,6 +291,7 @@ if __name__ == "__main__":
                     x = stellar_grid.get_filter_indices(sed["sed_filter"])
                     y = sed["sed_flux"].quantity.to(stellar_grid.flux_unit).value
                     y_err = sed["sed_eflux"].quantity.to(stellar_grid.flux_unit).value
+
 
 
                 # Quick minimize fit
@@ -319,6 +316,7 @@ if __name__ == "__main__":
                 if args.mcmc_off:
                     print("\nSkipping MCMC sampling.")
                     continue
+
 
 
                 # Full MCMC sampling
