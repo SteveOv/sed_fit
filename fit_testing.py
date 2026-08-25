@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ Testing SED fitting against known targets """
-# pylint: disable=no-member, invalid-name
+# pylint: disable=no-member, invalid-name, no-name-in-module
 import warnings
 from pathlib import Path
 import json
@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 # pylint: disable=wrong-import-position
 warnings.filterwarnings("ignore", "Using UFloat objects with std_dev==0 may give unexpected results.", category=UserWarning) # pylint: disable=line-too-long
 from uncertainties import ufloat, nominal_value as nom_val, std_dev
-from uncertainties.unumpy import nominal_values as nom_vals
+from uncertainties.unumpy import nominal_values as nom_vals, uarray
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.constants.iau2015 import M_sun, R_sun, L_sun
@@ -92,7 +92,8 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     drop_dir = Path.cwd() / "drop/testing"
-    drop_dir.mkdir(parents=True, exist_ok=True)
+    figs_dir = drop_dir / "figs"
+    figs_dir.mkdir(parents=True, exist_ok=True)
     log_file = drop_dir / f"{THIS_STEM}.log"
     if args.overwrite:
         log_file.unlink(missing_ok=True)
@@ -170,8 +171,8 @@ if __name__ == "__main__":
                                 / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
                         config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
 
-                figs_dir = drop_dir / "figs" / to_file_safe_str(target)
-                figs_dir.mkdir(parents=True, exist_ok=True)
+                plots_dir = drop_dir / "figs" / to_file_safe_str(target)
+                plots_dir.mkdir(parents=True, exist_ok=True)
 
                 if not all(k in config for k in ["ruwe", "ra", "dec", "parallax"]):
                     print(f"Querying Gaia DR3 for coordinates and ruwe of {target}")
@@ -206,7 +207,7 @@ if __name__ == "__main__":
                 fig = plot_sed(sed["sed_wl"].quantity, sed["sed_flux"].quantity,
                             sed["sed_eflux"].quantity, fmts=[".r"], labels=["observed"],
                             show_grid=True, title=target + " SED data")
-                fig.savefig(figs_dir / "sed-observations.pdf")
+                fig.savefig(plots_dir / "sed-observations.pdf")
                 plt.close(fig)
 
 
@@ -311,7 +312,7 @@ if __name__ == "__main__":
                 fig = plot_fitted_model(sed, theta_fit, stellar_grid, sed_flux_colname="sed_flux",
                                         show_combined_spectrum=True, show_component_spectra=False,
                                         show_grid=True, title=f"{target} SED and fitted model")
-                fig.savefig(figs_dir / "sed-min-fitted.pdf")
+                fig.savefig(plots_dir / "sed-min-fitted.pdf")
                 plt.close(fig)
 
                 # Save the results
@@ -340,14 +341,14 @@ if __name__ == "__main__":
                 fig = plot_fitted_model(sed, theta_mcmc, stellar_grid, sed_flux_colname="sed_flux",
                                         show_combined_spectrum=True, show_component_spectra=False,
                                         show_grid=True,title=f"{target} SED and MCMC sampled model")
-                fig.savefig(figs_dir / "sed-mcmc-sampled.pdf")
+                fig.savefig(plots_dir / "sed-mcmc-sampled.pdf")
                 plt.close(fig)
 
                 samples = samples_from_sampler(sampler, flat=True)
                 fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
                                     quantiles=[0.16, 0.5, 0.84], labels=theta_plot_labels[fit_mask],
                                     truths=nom_vals(theta_mcmc[fit_mask]))
-                fig.savefig(figs_dir / "sed-mcmc-corner.pdf")
+                fig.savefig(plots_dir / "sed-mcmc-corner.pdf")
                 plt.close(fig)
 
                 # Save the results
@@ -363,15 +364,28 @@ if __name__ == "__main__":
 
 
         # H-R Plots.
-        fit_thetas = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", comments="#")
-        Teffs = np.array([fit_thetas["Teff1"], fit_thetas["Teff2"]])
-        radii = np.array([fit_thetas["R1"], fit_thetas["R2"]])
-        lums = ((4 * np.pi * (radii * R_sun)**2 * sigma_sb * Teffs**4) / L_sun).value
-        fig = plot_hr_diagram(Teffs, lums, labels=["star 1", "star 2"],
+        print("\nCreating a H-R plot for the results of fitting the targets")
+        thetas = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", comments="#")
+        teffs = np.array([thetas["Teff1"], thetas["Teff2"]])
+        rads = np.array([thetas["R1"], thetas["R2"]])
+        lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
+        fig = plot_hr_diagram(teffs, lums, labels=["star 1", "star 2"],
                               plot_zams=True, legend_loc="best", invertx=True)
-        fig.savefig(drop_dir / "figs/h-r-min.pdf")
+        fig.savefig(figs_dir / "h-r-min.pdf")
         plt.close(fig)
 
+        if not args.mcmc_off:
+            print("\nCreating a H-R plot for the results of MCMC sampling the targets")
+            thetas = np.genfromtxt(mcmc_csv, dtype=None, names=True, delimiter=",", comments="#")
+            teffs = uarray(nominal_values=[thetas["Teff1"], thetas["Teff2"]],
+                           std_devs=[thetas["Teff1_err"], thetas["Teff2_err"]])
+            rads = uarray(nominal_values=[thetas["R1"], thetas["R2"]],
+                          std_devs=[thetas["R1_err"], thetas["R2_err"]])
+            lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
+            fig = plot_hr_diagram(teffs, lums, labels=["star 1", "star 2"],
+                                  plot_zams=True, legend_loc="best", invertx=True)
+            fig.savefig(figs_dir / "h-r-mcmc.pdf")
+            plt.close(fig)
 
         print("\n\n============================================================")
         print(f"Completed {THIS_STEM} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
