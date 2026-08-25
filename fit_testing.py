@@ -361,7 +361,7 @@ if __name__ == "__main__":
 
         # H-R Plots.
         print("\nCreating a H-R plot for the results of fitting the targets")
-        thetas = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", comments="#")
+        thetas = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
         teffs = np.array([thetas["Teff1"], thetas["Teff2"]])
         rads = np.array([thetas["R1"], thetas["R2"]])
         lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
@@ -372,7 +372,7 @@ if __name__ == "__main__":
 
         if not args.mcmc_off:
             print("\nCreating a H-R plot for the results of MCMC sampling the targets")
-            thetas = np.genfromtxt(mcmc_csv, dtype=None, names=True, delimiter=",", comments="#")
+            thetas = np.genfromtxt(mcmc_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
             teffs = uarray(nominal_values=[thetas["Teff1"], thetas["Teff2"]],
                            std_devs=[thetas["Teff1_err"], thetas["Teff2_err"]])
             rads = uarray(nominal_values=[thetas["R1"], thetas["R2"]],
