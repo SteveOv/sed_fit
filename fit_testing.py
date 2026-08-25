@@ -222,7 +222,7 @@ if __name__ == "__main__":
                 value_priors = [ufloat(config[f"{k}{i}"], config.get(f"{k}{i}_err", None) or 0)
                                                     for k in ["Teff", "logg", "R"] for i in [1, 2]]
                 value_priors += [1000 / ufloat(config["parallax"], config["parallax_err"])]
-                if "Av" in config:
+                if "av" in config:
                     value_priors += [ufloat(config["av"], config["av_err"])]
                 elif "ebv" in config:
                     value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
