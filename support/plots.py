@@ -122,8 +122,9 @@ def plot_fitted_model(sed: Table,
     obs_color, comb_color = "r", "b" # colours of the observations and combined fitted model
 
     nstars = model_fluxes.shape[0]
+    subs = ["ABCDEFGHIJKLM"[n] for n in range(nstars)]
     if show_legend:
-        labels = ["fitted pair", "observations"] + [f"fitted star {i+1}" for i in range(nstars)]
+        labels = ["fitted pair", "observations"] + [f"fitted star {sub}" for sub in subs]
     else:
         labels = [None] * (2 + nstars)
 

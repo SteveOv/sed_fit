@@ -44,17 +44,17 @@ from sed_fit.stellar_grids import StellarGrid
 # Use a non-interactive matplotlib backend to avoid threading errors.
 mpl_use("agg")
 
-
-theta_plot_labels = np.array([f"$T_{{\\rm eff,{st+1}}} / {{\\rm K}}$" for st in range(2)] \
-                            +[f"$\\log{{g}}_{{\\rm {st+1}}}$" for st in range(2)] \
-                            +[f"$R_{{\\rm {st+1}}} / {{\\rm R_{{\\odot}}}}$" for st in range(2)] \
+subs = ["A", "B"] # Fixed at 2 stars
+theta_plot_labels = np.array([f"$T_{{\\rm eff,{sub}}} / {{\\rm K}}$" for sub in subs] \
+                            +[f"$\\log{{g}}_{{\\rm {sub}}}$" for sub in subs] \
+                            +[f"$R_{{\\rm {sub}}} / {{\\rm R_{{\\odot}}}}$" for sub in subs] \
                             +["${\\rm dist} / {\\rm pc}$", "${\\rm A_{V}}$"])
-theta_labels = np.array([(f"Teff{st+1}", u.K) for st in range(2)] \
-                        +[(f"logg{st+1}", u.dex) for st in range(2)] \
-                        +[(f"R{st+1}", u.Rsun) for st in range(2)] \
+theta_labels = np.array([(f"Teff{sub}", u.K) for sub in subs] \
+                        +[(f"logg{sub}", u.dex) for sub in subs] \
+                        +[(f"R{sub}", u.Rsun) for sub in subs] \
                         +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
 result_columns = np.array([t for t, _ in theta_labels])
-label_columns = np.array([t for t, _ in theta_labels] + ["logL1", "logL2"])
+label_columns = np.array([t for t, _ in theta_labels] + [f"logL{sub}" for sub in subs])
 
 def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
                         known_values_dict: dict, labels: np.ndarray=theta_labels):
@@ -166,17 +166,17 @@ if __name__ == "__main__":
                 config.setdefault("search_term", target)
                 config.setdefault("Teff_sys",nom_val(estimate_teff_from_spt(config.get("SpT","F"))))
                 config.setdefault("logg_sys", 4.0)
-                for ix in [1, 2]:
-                    if f"logg{ix}" not in config:
+                for sub in subs:
+                    if f"logg{sub}" not in config:
                         logg = log_g(
-                            ufloat(config[f"M{ix}"], config.get(f"M{ix}_err", 0)) * M_sun.value,
-                            ufloat(config[f"R{ix}"], config.get(f"R{ix}_err", 0)) * R_sun.value)
-                        config[f"logg{ix}"], config[f"logg{ix}_err"] = nom_val(logg), std_dev(logg)
+                            ufloat(config[f"M{sub}"], config.get(f"M{sub}_err", 0)) * M_sun.value,
+                            ufloat(config[f"R{sub}"], config.get(f"R{sub}_err", 0)) * R_sun.value)
+                        config[f"logg{sub}"], config[f"logg{sub}_err"] = nom_val(logg),std_dev(logg)
                 for k in ["Teff", "logg"]:
                     if f"{k}R" not in config:
-                        nom1, nom2 = config[f"{k}1"], config[f"{k}2"]
-                        ratio = ufloat(nom2, config.get(f"{k}2_err", None) or nom2 * 0.05) \
-                                / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
+                        nomA, nomB = config[f"{k}A"], config[f"{k}B"]
+                        ratio = ufloat(nomB, config.get(f"{k}B_err", None) or nomB * 0.05) \
+                                / ufloat(nomA, config.get(f"{k}A_err", None) or nomA * 0.05)
                         config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
 
                 if not all(k in config for k in ["ruwe", "ra", "dec", "parallax"]):
@@ -229,8 +229,8 @@ if __name__ == "__main__":
                 for k in ["TeffR", "loggR", "k"]:
                     ratio_priors += [None, ufloat(config[k], config[f"{k}_err"])]
 
-                value_priors = [ufloat(config[f"{k}{i}"], config.get(f"{k}{i}_err", None) or 0)
-                                                    for k in ["Teff", "logg", "R"] for i in [1, 2]]
+                value_priors = [ufloat(config[f"{k}{sub}"], config.get(f"{k}{sub}_err", None) or 0)
+                                                    for k in ["Teff", "logg", "R"] for sub in subs]
                 value_priors += [dist]
                 if "av_override" in config and args.use_av_override:
                     value_priors += [ufloat(config["av_override"], 0.05)]
@@ -386,23 +386,23 @@ if __name__ == "__main__":
                 print(f"\nCreating a H-R plot of the target's {msg}")
                 thetas = np.genfromtxt(csv, dtype=None, names=True, delimiter=",", encoding="utf8")
                 lums = None
-                if "Teff1_err" in thetas.dtype.names:
-                    teffs = uarray(nominal_values=[thetas["Teff1"], thetas["Teff2"]],
-                                   std_devs=[thetas["Teff1_err"], thetas["Teff2_err"]])
-                    rads = uarray(nominal_values=[thetas["R1"], thetas["R2"]],
-                                  std_devs=[thetas["R1_err"], thetas["R2_err"]])
-                    if "logL1" in thetas.dtype.names:
-                        lums = 10**uarray(nominal_values=[thetas["logL1"], thetas["logL2"]],
-                                          std_devs=[thetas["logL1_err"], thetas["logL2_err"]])
+                if "TeffA_err" in thetas.dtype.names:
+                    teffs = uarray(nominal_values=[thetas["TeffA"], thetas["TeffB"]],
+                                   std_devs=[thetas["TeffA_err"], thetas["TeffB_err"]])
+                    rads = uarray(nominal_values=[thetas["RA"], thetas["RB"]],
+                                  std_devs=[thetas["RA_err"], thetas["RB_err"]])
+                    if "LogLA" in thetas.dtype.names:
+                        lums = 10**uarray(nominal_values=[thetas["LogLA"], thetas["logLB"]],
+                                          std_devs=[thetas["logLA_err"], thetas["logLB_err"]])
                 else:
-                    teffs = np.array([thetas["Teff1"], thetas["Teff2"]])
-                    rads = np.array([thetas["R1"], thetas["R2"]])
-                    if "logL1" in thetas.dtype.names:
-                        lums = 10**uarray([thetas["logL1"], thetas["logL2"]])
+                    teffs = np.array([thetas["TeffA"], thetas["TeffB"]])
+                    rads = np.array([thetas["RA"], thetas["RB"]])
+                    if "LogLA" in thetas.dtype.names:
+                        lums = 10**uarray([thetas["LogLA"], thetas["logLB"]])
 
                 if lums is None:
                     lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
-                fig = plot_hr_diagram(teffs, lums, labels=["star 1", "star 2"],
+                fig = plot_hr_diagram(teffs, lums, labels=["star A", "star B"],
                                       plot_zams=True, legend_loc="best", invertx=True)
                 fig.savefig(figs_dir / f"h-r-{name}.pdf")
                 plt.close(fig)
