@@ -53,7 +53,8 @@ theta_labels = np.array([(f"Teff{st+1}", u.K) for st in range(2)] \
                         +[(f"logg{st+1}", u.dex) for st in range(2)] \
                         +[(f"R{st+1}", u.Rsun) for st in range(2)] \
                         +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
-
+result_columns = np.array([t for t, _ in theta_labels])
+label_columns = np.array([t for t, _ in theta_labels] + ["logL1", "logL2"])
 
 def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
                         known_values_dict: dict, labels: np.ndarray=theta_labels):
@@ -107,13 +108,16 @@ if __name__ == "__main__":
         print(f"Directory for data, logs & plots: {drop_dir}\n", flush=True)
 
         # Set up the CSV files that will hold the results
+        lbl_csv = drop_dir / "labels.csv"
         fit_csv, mcmc_csv = drop_dir / "min-results.csv", drop_dir / "mcmc-results.csv"
-        for file, head_fmt in [(fit_csv, r"{0}"), (mcmc_csv, r"{0},{0}_err")]:
-            if not "mcmc" in file.name or not args.mcmc_off:
-                with open(file, mode=("w" if args.overwrite else "a"), encoding="utf8") as f:
+        for csv, cols, hd_fmt in [(lbl_csv, label_columns, r"{0},{0}_err"),
+                                    (fit_csv, result_columns, r"{0}"),
+                                    (mcmc_csv,  result_columns, r"{0},{0}_err")]:
+            if not "mcmc" in csv.name or not args.mcmc_off:
+                with open(csv, mode=("w" if args.overwrite else "a"), encoding="utf8") as f:
                     # OK to append headers as they're comments and should be ignored if in the body
-                    f.write("#target," + ",".join(head_fmt.format(l) for l,_ in theta_labels) +"\n")
-                    f.write("# " + run_details +"\n")
+                    f.write("#target," + ",".join(hd_fmt.format(c) for c in cols) + "\n")
+                    f.write("# " + run_details + "\n")
 
         # Extinction model: G23 (Gordon et al., 2023) Milky Way R(V) filter gives broadest coverage
         ext_model = G23(Rv=3.1)
@@ -153,6 +157,9 @@ if __name__ == "__main__":
                 print("\n\n------------------------------------------------------------")
                 print(f"Processing target {tix} of {targets_count}: {target}")
                 print("------------------------------------------------------------", flush=True)
+                plots_dir = drop_dir / "figs" / to_file_safe_str(target)
+                plots_dir.mkdir(parents=True, exist_ok=True)
+
 
 
                 # Create any missing config values
@@ -172,9 +179,6 @@ if __name__ == "__main__":
                                 / ufloat(nom1, config.get(f"{k}1_err", None) or nom1 * 0.05)
                         config[f"{k}R"], config[f"{k}R_err"] = nom_val(ratio), std_dev(ratio)
 
-                plots_dir = drop_dir / "figs" / to_file_safe_str(target)
-                plots_dir.mkdir(parents=True, exist_ok=True)
-
                 if not all(k in config for k in ["ruwe", "ra", "dec", "parallax"]):
                     print(f"Querying Gaia DR3 for coordinates and ruwe of {target}")
                     dr3_id = int(config["gaia_dr3_id"])
@@ -185,6 +189,11 @@ if __name__ == "__main__":
                         config["dec"] = _tbl["dec"][0]                          # deg
                         config["parallax"] = _tbl["parallax"][0]
                         config["parallax_err"] = _tbl["parallax_error"][0]
+
+                # Get the distance and store it as a label
+                dist = 1000 / ufloat(config["parallax"], config.get("parallax_err", None) or 0) # pc
+                config.setdefault("dist", dist.n)
+                config.setdefault("dist_err", dist.s)
 
 
 
@@ -222,18 +231,21 @@ if __name__ == "__main__":
 
                 value_priors = [ufloat(config[f"{k}{i}"], config.get(f"{k}{i}_err", None) or 0)
                                                     for k in ["Teff", "logg", "R"] for i in [1, 2]]
-                value_priors += [1000 / ufloat(config["parallax"], config["parallax_err"])]
+                value_priors += [dist]
                 if "av_override" in config and args.use_av_override:
                     value_priors += [ufloat(config["av_override"], 0.05)]
-                elif "av" in config:
-                    value_priors += [ufloat(config["av"], config["av_err"])]
-                elif "ebv" in config:
-                    value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
                 else:
-                    coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
-                                      distance=1000 / config["parallax"] * u.pc, frame="icrs")
-                    value_priors += [Av:=ufloat(get_gontcharov_av(coords)[0], 0.04 * ext_model.Rv)]
-                    print(f"\nAv from the Gontcharov extinction map & target coords: {Av:.3f}")
+                    if "av" in config:
+                        value_priors += [ufloat(config["av"], config["av_err"])]
+                    elif "ebv" in config:
+                        value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
+                    else:
+                        coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
+                                         distance=1000 / config["parallax"] * u.pc, frame="icrs")
+                        value_priors += [Av:=ufloat(get_gontcharov_av(coords)[0],0.04*ext_model.Rv)]
+                        print(f"\nAv from the Gontcharov extinction map & target coords: {Av:.3f}")
+                    config.setdefault("av", value_priors[-1].n)
+                    config.setdefault("av_err", value_priors[-1].s)
 
                 for ix, vp in enumerate(value_priors): # Set any missing uncertainties to 5%
                     if not std_dev(vp):
@@ -272,6 +284,12 @@ if __name__ == "__main__":
                             # Ratio constraint. Ignore primary which has a ratio prior of None
                             ret_val += ((theta[ti]/theta[ti-1] - ratio_prior.n) / ratio_prior.s)**2
                     return -0.5 * ret_val
+
+
+
+                # Save the labels to a csv.
+                with lbl_csv.open("a", encoding="utf8") as f:
+                    f.write(f"{target}," + ",".join(f"{config[c]:.6e},{config.get(f'{c}_err', None) or 0:.6e}" for c in label_columns) +"\n") # pylint: disable=line-too-long
 
 
 
@@ -361,28 +379,33 @@ if __name__ == "__main__":
 
 
         # H-R Plots.
-        print("\nCreating a H-R plot for the results of fitting the targets")
-        thetas = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
-        teffs = np.array([thetas["Teff1"], thetas["Teff2"]])
-        rads = np.array([thetas["R1"], thetas["R2"]])
-        lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
-        fig = plot_hr_diagram(teffs, lums, labels=["star 1", "star 2"],
-                              plot_zams=True, legend_loc="best", invertx=True)
-        fig.savefig(figs_dir / "h-r-min.pdf")
-        plt.close(fig)
+        for csv, name, msg in [(fit_csv, "min", "fitting results"),
+                               (mcmc_csv, "mcmc", "MCMC sampling results"),
+                               (lbl_csv, "labels", "label values")]:
+            if name != "mcmc" or not args.mcmc_off:
+                print(f"\nCreating a H-R plot of the target's {msg}")
+                thetas = np.genfromtxt(csv, dtype=None, names=True, delimiter=",", encoding="utf8")
+                lums = None
+                if "Teff1_err" in thetas.dtype.names:
+                    teffs = uarray(nominal_values=[thetas["Teff1"], thetas["Teff2"]],
+                                   std_devs=[thetas["Teff1_err"], thetas["Teff2_err"]])
+                    rads = uarray(nominal_values=[thetas["R1"], thetas["R2"]],
+                                  std_devs=[thetas["R1_err"], thetas["R2_err"]])
+                    if "logL1" in thetas.dtype.names:
+                        lums = 10**uarray(nominal_values=[thetas["logL1"], thetas["logL2"]],
+                                          std_devs=[thetas["logL1_err"], thetas["logL2_err"]])
+                else:
+                    teffs = np.array([thetas["Teff1"], thetas["Teff2"]])
+                    rads = np.array([thetas["R1"], thetas["R2"]])
+                    if "logL1" in thetas.dtype.names:
+                        lums = 10**uarray([thetas["logL1"], thetas["logL2"]])
 
-        if not args.mcmc_off:
-            print("\nCreating a H-R plot for the results of MCMC sampling the targets")
-            thetas = np.genfromtxt(mcmc_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
-            teffs = uarray(nominal_values=[thetas["Teff1"], thetas["Teff2"]],
-                           std_devs=[thetas["Teff1_err"], thetas["Teff2_err"]])
-            rads = uarray(nominal_values=[thetas["R1"], thetas["R2"]],
-                          std_devs=[thetas["R1_err"], thetas["R2_err"]])
-            lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
-            fig = plot_hr_diagram(teffs, lums, labels=["star 1", "star 2"],
-                                  plot_zams=True, legend_loc="best", invertx=True)
-            fig.savefig(figs_dir / "h-r-mcmc.pdf")
-            plt.close(fig)
+                if lums is None:
+                    lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
+                fig = plot_hr_diagram(teffs, lums, labels=["star 1", "star 2"],
+                                      plot_zams=True, legend_loc="best", invertx=True)
+                fig.savefig(figs_dir / f"h-r-{name}.pdf")
+                plt.close(fig)
 
         print("\n\n============================================================")
         print(f"Completed {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
