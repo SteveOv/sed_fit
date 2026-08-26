@@ -246,8 +246,6 @@
         "search_term": "V* V596 Pup",
         "source": "DEBCAT and Southworth (2025) Tables II and III. Used SAP flux from TESS sectors 34 and 61 separately characterized with JKTEBOP v43.",
         "reference": "Southworth25obsR24",
-        "exclude": true,
-        "why_exclude": "chacterisation published after preparing EBOP M1VEN article",
         "aka": "TIC 144085463, HD 71581",
         "SpT": "A1 V + A1 V",
         "gaia_dr3_id": 5706279565053294848,
@@ -741,8 +739,6 @@
         "ebv": 0.083,           "ebv_err": 0.056
     },
     "UZ Dra": {
-        "exclude": true,
-        "why_exclude": "not in EBOP MAVEN test set",
         "search_term": "TIC 259126645",
         "source": "Southworth (2025Obs...145..201S) Rediscussion 27, Tables II and V.",
         "reference": "Southworth25obsR27",
@@ -766,6 +762,8 @@
         "TeffB": 6170,          "TeffB_err": 120,
         "loggA": 4.3356,        "loggA_err": 0.0020,
         "loggB": 4.4145,        "loggB_err": 0.0015,
+        "logLA": 0.406,         "logLA_err": 0.032,
+        "logLB": 0.216,         "logLB_err": 0.026,
         "k": 0.87795,           "k_err": 0.00076,
         "J": 0.8582,            "J_err": 0.0051,
         "L3": 0.0104,           "L3_err": 0.0045,
@@ -878,8 +876,6 @@
     },
     "HP Dra": {
         "search_term": "TIC 48356677",
-        "exclude": true,
-        "why_exclude": "not in EBOP MAVEN test set",
         "source": "Southworth (2025Obs...145..167S) Rediscussion 26, Tables II & IV.",
         "reference": "Southworth25obsR26",
         "aka": "TIC 48356677, HD 175900",
