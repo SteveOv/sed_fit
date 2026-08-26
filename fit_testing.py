@@ -326,9 +326,9 @@ if __name__ == "__main__":
                 print(flush=True)
                 nwalkers, thin_by = 100, 1
                 theta_mcmc, sampler = mcmc_fit(x, y, y_err, theta0, fit_mask, stellar_grid,
-                                               ln_prior_func=ln_prior_func, thin_by=thin_by,
+                                               ln_prior_func=ln_prior_func,
                                                nwalkers=nwalkers, nsteps=100000, processes=8,
-                                               early_stopping=True, early_stopping_from=10000,
+                                               thin_by=thin_by, early_stopping=True,
                                                progress=True, verbose=True)
 
                 print("Fitted params from MCMC sampling. Those marked * were fitted.",
