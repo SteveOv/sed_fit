@@ -403,7 +403,8 @@ if __name__ == "__main__":
                 if lums is None:
                     lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
                 fig = plot_hr_diagram(teffs, lums, labels=["star A", "star B"],
-                                      plot_zams=True, legend_loc="best", invertx=True)
+                                      plot_zams=True, legend_loc="best", invertx=True,
+                                      xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
                 fig.savefig(figs_dir / f"h-r-{name}.pdf")
                 plt.close(fig)
 
