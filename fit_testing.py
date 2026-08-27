@@ -99,6 +99,8 @@ if __name__ == "__main__":
     log_file = drop_dir / f"{Path(ap.prog).stem}.log"
     if args.overwrite:
         log_file.unlink(missing_ok=True)
+    lbl_csv = drop_dir / "labels.csv"
+    fit_csv, mcmc_csv = drop_dir / "min-results.csv", drop_dir / "mcmc-results.csv"
 
     with redirect_stdout(Tee(open(log_file, "a", encoding="utf8"))) as log:
         print("\n============================================================")
@@ -108,8 +110,6 @@ if __name__ == "__main__":
         print(f"Directory for data, logs & plots: {drop_dir}\n", flush=True)
 
         # Set up the CSV files that will hold the results
-        lbl_csv = drop_dir / "labels.csv"
-        fit_csv, mcmc_csv = drop_dir / "min-results.csv", drop_dir / "mcmc-results.csv"
         for csv, cols, hd_fmt in [(lbl_csv, label_columns, r"{0},{0}_err"),
                                     (fit_csv, result_columns, r"{0}"),
                                     (mcmc_csv,  result_columns, r"{0},{0}_err")]:
