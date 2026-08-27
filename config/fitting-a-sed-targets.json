@@ -169,7 +169,7 @@
         "MA": 2.273,            "MA_err": 0.011,
         "MB": 1.595,            "MB_err": 0.008,
         "RA": 1.799,            "RA_err": 0.019,
-        "RB": 1.1410,           "RB_err": 0.021,
+        "RB": 1.410,            "RB_err": 0.021,
         "TeffA": 10200,         "TeffA_err": 90,
         "TeffB": 7670,          "TeffB_err": 85,
         "loggA": 4.285,         "loggA_err": 0.009,
