@@ -11,6 +11,7 @@ from sys import orig_argv
 import traceback
 
 import numpy as np
+from numpy.core.records import fromarrays
 
 import corner
 from matplotlib import use as mpl_use
@@ -18,7 +19,7 @@ import matplotlib.pyplot as plt
 
 # pylint: disable=wrong-import-position
 warnings.filterwarnings("ignore", "Using UFloat objects with std_dev==0 may give unexpected results.", category=UserWarning) # pylint: disable=line-too-long
-from uncertainties import ufloat, nominal_value as nom_val, std_dev
+from uncertainties import ufloat, UFloat, nominal_value as nom_val, std_dev
 from uncertainties.unumpy import nominal_values as nom_vals, uarray
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -32,7 +33,7 @@ from deblib.stellar import log_g
 
 from support.extinction import get_gontcharov_av
 from support.sed import get_sed_for_target
-from support.plots import plot_sed, plot_fitted_model, plot_hr_diagram
+from support.plots import plot_sed, plot_fitted_model, plot_hr_diagram, plot_predictions_vs_labels
 from support.tee import Tee
 from support.utils import to_file_safe_str, format_value, estimate_teff_from_spt
 
@@ -45,19 +46,19 @@ from sed_fit.stellar_grids import StellarGrid
 mpl_use("agg")
 
 subs = ["A", "B"] # Fixed at 2 stars
-theta_plot_labels = np.array([f"$T_{{\\rm eff,{sub}}} / {{\\rm K}}$" for sub in subs] \
+theta_plot_captions = np.array([f"$T_{{\\rm eff,{sub}}} / {{\\rm K}}$" for sub in subs] \
                             +[f"$\\log{{g}}_{{\\rm {sub}}}$" for sub in subs] \
                             +[f"$R_{{\\rm {sub}}} / {{\\rm R_{{\\odot}}}}$" for sub in subs] \
                             +["${\\rm dist} / {\\rm pc}$", "${\\rm A_{V}}$"])
-theta_labels = np.array([(f"Teff{sub}", u.K) for sub in subs] \
+theta_captions = np.array([(f"Teff{sub}", u.K) for sub in subs] \
                         +[(f"logg{sub}", u.dex) for sub in subs] \
                         +[(f"R{sub}", u.Rsun) for sub in subs] \
                         +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
-result_columns = np.array([t for t, _ in theta_labels])
-label_columns = np.array([t for t, _ in theta_labels] + [f"logL{sub}" for sub in subs])
+result_columns = np.array([t for t, _ in theta_captions])
+label_columns = np.array([t for t, _ in theta_captions] + [f"logL{sub}" for sub in subs])
 
 def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
-                        known_values_dict: dict, labels: np.ndarray=theta_labels):
+                        known_values_dict: dict, labels: np.ndarray=theta_captions):
     """ Pretty printer for fitted params in rows with known values in brackets."""
     for (param, unit), val, fitted in zip(labels, theta, fitted_mask):
         kval = None
@@ -361,7 +362,8 @@ if __name__ == "__main__":
 
                 samples = samples_from_sampler(sampler, flat=True)
                 fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
-                                    quantiles=[0.16, 0.5, 0.84], labels=theta_plot_labels[fit_mask],
+                                    quantiles=[0.16, 0.5, 0.84],
+                                    labels=theta_plot_captions[fit_mask],
                                     truths=nom_vals(theta_mcmc[fit_mask]))
                 fig.savefig(plots_dir / "sed-mcmc-corner.pdf")
                 plt.close(fig)
@@ -378,35 +380,50 @@ if __name__ == "__main__":
             log.flush()
 
 
-        # H-R Plots.
-        for csv, name, msg in [(fit_csv, "min", "fitting results"),
-                               (mcmc_csv, "mcmc", "MCMC sampling results"),
-                               (lbl_csv, "labels", "label values")]:
-            if name != "mcmc" or not args.mcmc_off:
-                print(f"\nCreating a H-R plot of the target's {msg}")
-                thetas = np.genfromtxt(csv, dtype=None, names=True, delimiter=",", encoding="utf8")
-                lums = None
-                if "TeffA_err" in thetas.dtype.names:
-                    teffs = uarray(nominal_values=[thetas["TeffA"], thetas["TeffB"]],
-                                   std_devs=[thetas["TeffA_err"], thetas["TeffB_err"]])
-                    rads = uarray(nominal_values=[thetas["RA"], thetas["RB"]],
-                                  std_devs=[thetas["RA_err"], thetas["RB_err"]])
-                    if "LogLA" in thetas.dtype.names:
-                        lums = 10**uarray(nominal_values=[thetas["LogLA"], thetas["logLB"]],
-                                          std_devs=[thetas["logLA_err"], thetas["logLB_err"]])
-                else:
-                    teffs = np.array([thetas["TeffA"], thetas["TeffB"]])
-                    rads = np.array([thetas["RA"], thetas["RB"]])
-                    if "LogLA" in thetas.dtype.names:
-                        lums = 10**uarray([thetas["LogLA"], thetas["logLB"]])
+        # PLOTS
+        raw = np.genfromtxt(lbl_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
+        lbl_vals = fromarrays(uarray(nominal_values=[raw[c] for c in label_columns],
+                                     std_devs=[raw[f"{c}_err"] for c in label_columns]),
+                            dtype=[(c, UFloat.dtype) for c in label_columns])
 
-                if lums is None:
+        fit_vals = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
+
+        mcmc_vals = None
+        if not args.mcmc_off:
+            raw = np.genfromtxt(mcmc_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
+            mcmc_vals = fromarrays(uarray(nominal_values=[raw[c] for c in result_columns],
+                                        std_devs=[raw[f"{c}_err"] for c in result_columns]),
+                                dtype=[(c, UFloat.dtype) for c in result_columns])
+
+        print()
+        for vals, name, msg in [(fit_vals, "min", "fitting results"),
+                                (mcmc_vals, "mcmc", "MCMC sampling results"),
+                                (lbl_vals, "labels", "label values")]:
+            if vals is not None:
+                print(f"Creating a H-R plot of the target's {msg}")
+                lums = None
+                if "LogLA" in vals.dtype.names:
+                    lums = 10**np.array([vals["logLA"], vals["logLA"]])
+                else:
+                    teffs = np.array([vals["TeffA"], vals["TeffB"]])
+                    rads = np.array([vals["RA"], vals["RB"]])
                     lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
                 fig = plot_hr_diagram(teffs, lums, labels=["star A", "star B"],
                                       plot_zams=True, legend_loc="best", invertx=True,
                                       xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
                 fig.savefig(figs_dir / f"h-r-{name}.pdf")
                 plt.close(fig)
+
+            if vals is not None and name != "labels":
+                print(f"Creating a result-vs-labels plot of the target's {msg}")
+                plot_columns = ["TeffA", "TeffB", "RA", "RB"]
+                plot_captions = np.array([p for c, p in zip(result_columns, theta_plot_captions)
+                                                                            if c in plot_columns])
+                fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
+                                                 captions=plot_captions, cols=4)
+                fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")
+                plt.close(fig)
+
 
         print("\n\n============================================================")
         print(f"Completed {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")

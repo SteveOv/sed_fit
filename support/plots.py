@@ -1,7 +1,7 @@
 """ Training and testing specific plots. """
 # pylint: disable=too-many-arguments, too-many-locals, too-many-branches, too-many-statements
 from typing import Tuple, List, Union
-from itertools import cycle
+from itertools import cycle, zip_longest
 from numbers import Number
 from pathlib import Path
 from inspect import getsourcefile
@@ -286,6 +286,145 @@ def plot_hr_diagram(teffs: ArrayLike,
 
     format_axes(ax, **format_kwargs)
     ax.tick_params(axis="x", which="minor", top=False, bottom=False, labelbottom=False)
+    return fig
+
+
+def plot_predictions_vs_labels(fitted_values: ArrayLike,
+                               label_values: ArrayLike,
+                               captions: ArrayLike,
+                               xlabel_prefix: str="label",
+                               ylabel_prefix: str="fitted",
+                               hl_mask1: np.ndarray[bool]=None,
+                               hl_mask2: np.ndarray[bool]=None,
+                               hl_mask3: np.ndarray[bool]=None,
+                               cols: int=2,
+                               big_markers: bool=None) -> _Figure:
+    """
+    Will create a plot figure with a grid of axes, one per label, showing the
+    fitted vs label values. It is up to calling code to show or save the figure.
+
+    :fitted_values: the fitted values structured array
+    :label_values: the known/label values structured array
+    :captions: the plot captions - the name of each parameter
+    :xlabel_prefix: the prefix text for the labels/x-axis label
+    :ylabel_prefix: the prefix text for the predictions/y-axis label
+    :hl_mask1: optional mask for targets to be plotted with 1st alternative/highlight marker
+    :hl_mask2: optional mask for targets to be plotted with 2nd alternative/highlight marker
+    :hl_mask3: optional mask for targets to be plotted with 3rd alternative/highlight marker
+    :big_markers: if True, or if not set and inst count < 100, then plot larger markers
+    :returns: the Figure
+    """
+    param_count = len(list(fitted_values.dtype.names))
+    inst_count = fitted_values.shape[0]
+    if label_values.shape[0] != inst_count:
+        raise ValueError("labels are of a different length to the fitted_values")
+    if hl_mask1 is not None and hl_mask1.shape[0] != inst_count:
+        raise ValueError("hl_mask1 are given with a different length to the fitted_values")
+    if hl_mask2 is not None and hl_mask2.shape[0] != inst_count:
+        raise ValueError("hl_mask2 are given with a different length to the fitted_values")
+    if hl_mask3 is not None and hl_mask3.shape[0] != inst_count:
+        raise ValueError("hl_mask3 are given with a different length to the fitted_values")
+    if captions.shape[0] != param_count:
+        raise ValueError("captions are of a different length to the number of params")
+
+    # Colours to use to ensure consistency across plots.
+    # Attempted to select for accessibility (i.e.: contrast, consideration of colour blindness)
+    #    base colour (lighter); darker for alternatives/highlights
+    plot_colors = [ "tab:blue", "tab:orange", "darkgreen", "darkred", "k" ]
+    ref_line_color = "darkgray"
+
+    if hl_mask1 is None:
+        hl_mask1 = np.zeros((inst_count), dtype=bool)
+    if hl_mask2 is None:
+        hl_mask2 = np.zeros((inst_count), dtype=bool)
+    if hl_mask3 is None:
+        hl_mask3 = np.zeros((inst_count), dtype=bool)
+
+    # Special aspect ratio for each axes of 3.0:2.9, slightly wider than high, to look balanced
+    # with a sqaure plot area and slightly more width for y-tick labels than those for x-ticks.
+    rows = int(np.ceil(param_count / cols))
+    fig, axes = plt.subplots(rows, cols, constrained_layout=True,
+                             figsize=(cols * 2.7, rows * 2.7))
+    axes = axes.flatten()
+
+    # The markers, marker sizes and alpha values are different depending on small/large dataset
+    if big_markers or (big_markers is None and inst_count < 100):
+        fmt = ["o", "s", "D", "p"]
+        c = [plot_colors[0], plot_colors[4], plot_colors[4], plot_colors[4]]
+        ms = [7.0, 10.5, 10.5, 10.5]
+        alpha = [(0.66 if any(hl_mask1) or any(hl_mask2) else 1.0), 1.0, 1.0, 1.0]
+    else:
+        fmt = ["o", "o", "o", "o"]
+        c = [plot_colors[0], plot_colors[1], plot_colors[4], plot_colors[4]]
+        ms = [3.0, 3.0, 3.0, 3.0]
+        alpha = [0.25, 0.50, 0.75, 0.75]
+
+    for (ax, param, caption) in zip_longest(axes.flatten(), fitted_values.dtype.names, captions):
+        if param:
+            lbl_vals = nominal_values(label_values[param])
+            lbl_errs = std_devs(label_values[param])
+            fit_vals = nominal_values(fitted_values[param])
+            fit_errs = std_devs(fitted_values[param])
+
+            # Set the "view" x & y limits over the data and draw a diagonal line for "exact" match
+            vmin = np.nan_to_num(min(lbl_vals.min(), fit_vals.min())) # pylint: disable=nested-min-max
+            vmax = np.nan_to_num(max(lbl_vals.max(), fit_vals.max())) # pylint: disable=nested-min-max
+            if param.startswith("Teff"):
+                vmin = min(vmin, 2800)
+                vmax = max(vmax, 28000)
+            elif param.startswith("R"):
+                vmin = min(0.2, vmin)
+                vmax = max(5.0, vmax)
+            vpad = 0.05 * (vmax - vmin)
+            vdiag = (vmin - vpad, vmax + vpad)
+            vrange = max(vdiag) - min(vdiag)
+            ax.plot(vdiag, vdiag, color=ref_line_color, linestyle="--", linewidth=1.0, zorder=-10)
+
+            # in order of increasing z
+            non_hl_mask = ~hl_mask1 & ~hl_mask2
+            for (mask,                      fix,    filled) in [
+                (non_hl_mask,               0,      False),
+                (hl_mask1,                  1,      False),
+                (hl_mask2,                  2,      False),
+                (hl_mask3,                  3,      False),
+            ]:
+                if any(mask):
+                    fs = "full" if filled else "none"
+                    ax.errorbar(x=lbl_vals[mask], y=fit_vals[mask],
+                                xerr=lbl_errs[mask], yerr=fit_errs[mask], capsize=None,
+                                c=c[fix], lw=ms[fix]/7.5, markeredgewidth=ms[fix]/7.5,
+                                fmt=fmt[fix], ms=ms[fix]*0.66, alpha=alpha[fix], fillstyle=fs)
+
+            format_axes(ax, xlim=vdiag, ylim=vdiag, xlabel=f"{xlabel_prefix} {caption}",
+                        ylabel=f"{ylabel_prefix} {caption}")
+
+            # Make sure the plot areas are squared and have similar label areas.
+            ax.set_aspect("equal", "box")
+            ax.tick_params("y", rotation=90)
+
+            # We want up to 5 tick labels at suitable points across the range of values.
+            maj_tick_labels = None
+            if param.startswith("Teff"):
+                maj_ticks = [5000, 10000, 15000, 20000, 25000]
+                maj_tick_labels = ["5", "10", "15", "20", "25"]
+                ax.set(xlabel=ax.get_xlabel().replace("K", r"1000\,K"),
+                       ylabel=ax.get_ylabel().replace("K", r"1000\,K"))
+            elif param.startswith("R"):
+                maj_ticks = [1.0, 2.0, 3.0, 4.0, 5.0]
+            else:
+                # Adapt to the view range and finds a step which will give 4, 5 or 6 ticks.
+                # Suspect logic; may not work universally but it's good enough for current results.
+                for tick_step in [0.1, 0.5, 1, 2, 2.5, 5, 10]:
+                    if vrange / tick_step < 6.5:
+                        break
+            ax.set_xticks(maj_ticks, minor=False)
+            ax.set_yticks(maj_ticks, minor=False)
+            if maj_tick_labels is not None:
+                # Override default labelling
+                ax.set_xticklabels(maj_tick_labels, minor=False)
+                ax.set_yticklabels(maj_tick_labels, minor=False)
+        else:
+            ax.axis("off") # remove the unused ax
     return fig
 
 
