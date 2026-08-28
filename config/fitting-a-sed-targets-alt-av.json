@@ -1,0 +1,32 @@
+{
+    "MU Cas": {
+        "search_term": "V* MU Cas",
+        "aka": "TIC 83905462, HIP 1263",
+        "gaia_dr3_id": 429158427924463872,
+        "ruwe": 0.899,
+        "ra": 3.964810786976831,
+        "dec": 60.43156179196987,
+        "parallax": 0.513272695221339,
+        "parallax_err": 0.01908496767282486,
+        "parallax_bibcode": "2022yCat.1355....0G",
+        "sed_filter_exclusions": ["WISE:W4"],
+        "sed_tabname_exclusions": ["I/342/f3", "II/365/catwise"],
+        "source": "Southworth (2025Obs...145...26S) Rediscussion 22, Tables II & III.",
+        "citation_key": "Southworth24obsR22",
+        "notes": "This uses the STILISM E(B-V)=0.50(8) in the narrative by Southworth, rather than the adopted value of 0.44(5). All other params unchanged.",
+        "SpT": "B5 V + B5 V",
+        "MA": 4.674,            "MA_err": 0.091,
+        "MB": 4.586,            "MB_err": 0.084,
+        "RA": 4.117,            "RA_err": 0.039,
+        "RB": 3.653,            "RB_err": 0.045,
+        "TeffA": 14870,         "TeffA_err": 500,
+        "TeffB": 14940,         "TeffB_err": 500,
+        "loggA": 3.879,         "loggA_err": 0.007,
+        "loggB": 3.974,         "loggB_err": 0.010,
+        "logLA": 2.873,         "logLA_err": 0.059,
+        "logLB": 2.778,         "logLB_err": 0.059,
+        "LR": 0.804,            "LR_err": 0.029,
+        "k": 0.888,             "k_err": 0.016,
+        "ebv": 0.50,            "ebv_err": 0.08
+    }
+}

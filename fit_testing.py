@@ -3,6 +3,7 @@
 # pylint: disable=no-member, invalid-name, no-name-in-module
 import warnings
 from pathlib import Path
+from shutil import rmtree
 import json
 import argparse
 from datetime import datetime
@@ -73,12 +74,12 @@ def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="The sed_fit esting module for known targets.")
+    ap.add_argument(dest="targets_file", type=Path, metavar="TARGETS_FILE",
+                    help="json file containing the details of the targets to fit")
     ap.add_argument("-t", "--targets", dest="targets", type=str, required=False, nargs="+",
                     help="specific target from the targets file to be fitted (overrides exclude)")
     ap.add_argument("-mo", "--mcmc-off", dest="mcmc_off", action="store_true", required=False,
                     help="suppress running of MCMC for parameters")
-    ap.add_argument ("-o", "--overwrite", dest="overwrite", action="store_true", required=False,
-                     help="force overwrite of existing log and csv files (otherwise append)")
     # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
     ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True,
                     use_av_override=False)
@@ -92,28 +93,44 @@ if __name__ == "__main__":
     fit_flags = np.array([2]*2 + [0]*2 + [2]*2 + [1] + [1], dtype=int)
     fit_slices = np.array([slice(0, 2), slice(2, 4), slice(4, 6), slice(6, 7), slice(7, 8)])
 
-    drop_dir = Path.cwd() / "drop/testing"
-    figs_dir = drop_dir / "figs"
+    # Get the targets' configurations
+    with open(args.targets_file, mode="r", encoding="utf8") as f:
+        full_dict = json.load(f)
+        if args.targets is not None and len(args.targets) > 0:
+            targets_cfg = { k: full_dict[k] for k in args.targets if k in full_dict }
+        else:
+            targets_cfg = { k: c for k, c in full_dict.items() if not c.get("exclude", False) }
+    targets_count = len(list(targets_cfg.keys()))
+
+    # Set up the output directories
+    out_dir = Path.cwd() / f"drop/{args.targets_file.stem}"
+    log_file = out_dir / f"{Path(ap.prog).stem}.log"
+    if log_file.exists():
+        response = input("\nFiles exist for this test config. Clear down files y/N? ")
+        if response.strip().lower() in ["y", "yes"]:
+            for file in out_dir.glob("*"):
+                if file.is_dir():
+                    rmtree(file, ignore_errors=True)
+                else:
+                    file.unlink(missing_ok=True)
+    figs_dir = out_dir / "figs"
     figs_dir.mkdir(parents=True, exist_ok=True)
-    log_file = drop_dir / f"{Path(ap.prog).stem}.log"
-    if args.overwrite:
-        log_file.unlink(missing_ok=True)
-    lbl_csv = drop_dir / "labels.csv"
-    fit_csv, mcmc_csv = drop_dir / "min-results.csv", drop_dir / "mcmc-results.csv"
+    lbl_csv = out_dir / "labels.csv"
+    fit_csv, mcmc_csv = out_dir / "min-results.csv", out_dir / "mcmc-results.csv"
 
     with redirect_stdout(Tee(open(log_file, "a", encoding="utf8"))) as log:
         print("\n============================================================")
         print(f"Started {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
         print("============================================================")
         print(f"Command: {' '.join(orig_argv)}")
-        print(f"Directory for data, logs & plots: {drop_dir}\n", flush=True)
+        print(f"Directory for data, logs & plots: {out_dir}\n", flush=True)
 
         # Set up the CSV files that will hold the results
         for csv, cols, hd_fmt in [(lbl_csv, label_columns, r"{0},{0}_err"),
                                   (fit_csv, result_columns, r"{0}"),
                                   (mcmc_csv,  result_columns, r"{0},{0}_err")]:
             if not "mcmc" in csv.name or not args.mcmc_off:
-                with open(csv, mode=("w" if args.overwrite else "a"), encoding="utf8") as f:
+                with open(csv, mode="a", encoding="utf8") as f:
                     # OK to append headers as they're comments and should be ignored if in the body
                     f.write("# target," + ",".join(hd_fmt.format(c) for c in cols) + "\n")
                     f.write("# " + run_details + "\n")
@@ -141,22 +158,12 @@ if __name__ == "__main__":
         radius_limits = (0.1, 100)
         av_limits = (-1, 5)
 
-        # Get the targets' configurations
-        targets_config_file = Path.cwd() / "config" / "fitting-a-sed-targets.json"
-        with open(targets_config_file, mode="r", encoding="utf8") as f:
-            full_dict = json.load(f)
-            if args.targets is not None and len(args.targets) > 0:
-                targets_cfg = { k: full_dict[k] for k in args.targets if k in full_dict }
-            else:
-                targets_cfg = { k: c for k, c in full_dict.items() if not c.get("exclude", False) }
-        targets_count = len(list(targets_cfg.keys()))
-
         for tix, (target, config) in enumerate(targets_cfg.items(), start=1):
             try:
                 print("\n\n------------------------------------------------------------")
                 print(f"Processing target {tix} of {targets_count}: {target}")
                 print("------------------------------------------------------------", flush=True)
-                plots_dir = drop_dir / "figs" / to_file_safe_str(target)
+                plots_dir = figs_dir / to_file_safe_str(target)
                 plots_dir.mkdir(parents=True, exist_ok=True)
 
 
