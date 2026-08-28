@@ -101,10 +101,15 @@ if __name__ == "__main__":
             # Plots of result vs label values.
             if vals is not None and name != "labels" and lbl_vals is not None:
                 print(f"Creating a result-vs-labels plot of the target's {msg}")
+                hl_mask1 = hl_mask2 = hl_mask3 = np.zeros((len(vals),), bool)
+                # hl_mask1 = vals["target"] == "V436 Per"
+                # hl_mask2 = vals["target"] == "V539 Ara"
+                # hl_mask3 = vals["target"] == "MU Cas"
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
                 plot_captions = np.array([p for (c,_), p in zip(theta_captions, theta_plot_captions)
                                                                             if c in plot_columns])
                 fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
-                                                 captions=plot_captions, cols=2)
+                                                 captions=plot_captions, hl_mask1=hl_mask1,
+                                                 hl_mask2=hl_mask2, hl_mask3=hl_mask3, cols=2)
                 fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")
                 plt.close(fig)
