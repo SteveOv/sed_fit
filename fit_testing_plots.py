@@ -6,15 +6,13 @@ from pathlib import Path
 import argparse
 
 import numpy as np
-from numpy.core.records import fromarrays
 
 from matplotlib import use as mpl_use
 import matplotlib.pyplot as plt
 
 # pylint: disable=wrong-import-position
 warnings.filterwarnings("ignore", "Using UFloat objects with std_dev==0 may give unexpected results.", category=UserWarning) # pylint: disable=line-too-long
-from uncertainties import UFloat
-from uncertainties.unumpy import uarray
+from uncertainties import ufloat, UFloat
 import astropy.units as u
 from astropy.constants.iau2015 import R_sun, L_sun
 from astropy.constants import sigma_sb
@@ -35,28 +33,32 @@ theta_captions = np.array([(f"Teff{sub}", u.K) for sub in subs] \
                         +[(f"R{sub}", u.Rsun) for sub in subs] \
                         +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
 
-result_dtype = [(c, UFloat.dtype) for c, _ in theta_captions]
+result_dtype = [("target", object)] + [(c, UFloat.dtype) for c, _ in theta_captions]
 label_dtype = result_dtype + [(f"logL{sub}", UFloat.dtype) for sub in subs]
 
 
 def read_result_csv(csv_file: Path):
     """ Read the contents of the requested csv file, returning them as a structured array. """
     values = None
+
+    def parse_raw(the_raw, out_dtype):
+        """ Parse the array from the csv, which has val & var_err cols, into array of ufloats """
+        temp = [tuple(ufloat(r[c], r[f"{c}_err"]) if f"{c}_err" in r.dtype.names else r[c]
+                                                                            for c, _ in out_dtype)
+                                                                                for r in the_raw]
+        return np.array(temp, dtype=out_dtype)
+
     if not csv_file.exists():
         print(f"The testing csv file '{csv_file.name}' was not found.")
     else:
         print(f"Loading the testing csv file '{csv_file.name}'.")
         raw = np.genfromtxt(csv_file, dtype=None, names=True, delimiter=",", encoding="utf8")
+        # Yet to convince genfromtxt to use a ufloat converter so we're falling back on manual parse
         if "logLA_err" in raw.dtype.names:
-            values = fromarrays(uarray(nominal_values=[raw[c] for c, _ in label_dtype],
-                                       std_devs=[raw[f"{c}_err"] for c, _ in label_dtype]),
-                                dtype=label_dtype)
+            values = parse_raw(raw, label_dtype)
         elif "TeffA_err" in raw.dtype.names:
-            values = fromarrays(uarray(nominal_values=[raw[c] for c, _ in result_dtype],
-                                       std_devs=[raw[f"{c}_err"] for c, _ in result_dtype]),
-                                dtype=result_dtype)
-        else:
-            # It's a result file without uncertainties. We can us it as is.
+            values = parse_raw(raw, result_dtype)
+        else: # It's a result file without uncertainties. We can us it as is.
             values = raw
     return values
 
