@@ -11,7 +11,6 @@ from sys import orig_argv
 import traceback
 
 import numpy as np
-from numpy.core.records import fromarrays
 
 import corner
 from matplotlib import use as mpl_use
@@ -19,12 +18,11 @@ import matplotlib.pyplot as plt
 
 # pylint: disable=wrong-import-position
 warnings.filterwarnings("ignore", "Using UFloat objects with std_dev==0 may give unexpected results.", category=UserWarning) # pylint: disable=line-too-long
-from uncertainties import ufloat, UFloat, nominal_value as nom_val, std_dev
-from uncertainties.unumpy import nominal_values as nom_vals, uarray
+from uncertainties import ufloat, nominal_value as nom_val, std_dev
+from uncertainties.unumpy import nominal_values as nom_vals
 import astropy.units as u
 from astropy.coordinates import SkyCoord
-from astropy.constants.iau2015 import M_sun, R_sun, L_sun
-from astropy.constants import sigma_sb
+from astropy.constants.iau2015 import M_sun, R_sun
 from astroquery.gaia import Gaia
 
 from dust_extinction.parameter_averages import G23
@@ -33,7 +31,7 @@ from deblib.stellar import log_g
 
 from support.extinction import get_gontcharov_av
 from support.sed import get_sed_for_target
-from support.plots import plot_sed, plot_fitted_model, plot_hr_diagram, plot_predictions_vs_labels
+from support.plots import plot_sed, plot_fitted_model
 from support.tee import Tee
 from support.utils import to_file_safe_str, format_value, estimate_teff_from_spt
 
@@ -54,8 +52,8 @@ theta_captions = np.array([(f"Teff{sub}", u.K) for sub in subs] \
                         +[(f"logg{sub}", u.dex) for sub in subs] \
                         +[(f"R{sub}", u.Rsun) for sub in subs] \
                         +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
-result_columns = np.array([t for t, _ in theta_captions])
-label_columns = np.array([t for t, _ in theta_captions] + [f"logL{sub}" for sub in subs])
+result_columns = [t for t, _ in theta_captions]
+label_columns = result_columns + [f"logL{sub}" for sub in subs]
 
 def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
                         known_values_dict: dict, labels: np.ndarray=theta_captions):
@@ -112,12 +110,12 @@ if __name__ == "__main__":
 
         # Set up the CSV files that will hold the results
         for csv, cols, hd_fmt in [(lbl_csv, label_columns, r"{0},{0}_err"),
-                                    (fit_csv, result_columns, r"{0}"),
-                                    (mcmc_csv,  result_columns, r"{0},{0}_err")]:
+                                  (fit_csv, result_columns, r"{0}"),
+                                  (mcmc_csv,  result_columns, r"{0},{0}_err")]:
             if not "mcmc" in csv.name or not args.mcmc_off:
                 with open(csv, mode=("w" if args.overwrite else "a"), encoding="utf8") as f:
                     # OK to append headers as they're comments and should be ignored if in the body
-                    f.write("#target," + ",".join(hd_fmt.format(c) for c in cols) + "\n")
+                    f.write("# target," + ",".join(hd_fmt.format(c) for c in cols) + "\n")
                     f.write("# " + run_details + "\n")
 
         # Extinction model: G23 (Gordon et al., 2023) Milky Way R(V) filter gives broadest coverage
@@ -378,51 +376,6 @@ if __name__ == "__main__":
                 traceback.print_exception(exc, file=log)
 
             log.flush()
-
-
-        # PLOTS
-        raw = np.genfromtxt(lbl_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
-        lbl_vals = fromarrays(uarray(nominal_values=[raw[c] for c in label_columns],
-                                     std_devs=[raw[f"{c}_err"] for c in label_columns]),
-                            dtype=[(c, UFloat.dtype) for c in label_columns])
-
-        fit_vals = np.genfromtxt(fit_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
-
-        mcmc_vals = None
-        if not args.mcmc_off:
-            raw = np.genfromtxt(mcmc_csv, dtype=None, names=True, delimiter=",", encoding="utf8")
-            mcmc_vals = fromarrays(uarray(nominal_values=[raw[c] for c in result_columns],
-                                        std_devs=[raw[f"{c}_err"] for c in result_columns]),
-                                dtype=[(c, UFloat.dtype) for c in result_columns])
-
-        print()
-        for vals, name, msg in [(fit_vals, "min", "fitting results"),
-                                (mcmc_vals, "mcmc", "MCMC sampling results"),
-                                (lbl_vals, "labels", "label values")]:
-            if vals is not None:
-                print(f"Creating a H-R plot of the target's {msg}")
-                lums = None
-                if "LogLA" in vals.dtype.names:
-                    lums = 10**np.array([vals["logLA"], vals["logLA"]])
-                else:
-                    teffs = np.array([vals["TeffA"], vals["TeffB"]])
-                    rads = np.array([vals["RA"], vals["RB"]])
-                    lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
-                fig = plot_hr_diagram(teffs, lums, labels=["star A", "star B"],
-                                      plot_zams=True, legend_loc="best", invertx=True,
-                                      xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
-                fig.savefig(figs_dir / f"h-r-{name}.pdf")
-                plt.close(fig)
-
-            if vals is not None and name != "labels":
-                print(f"Creating a result-vs-labels plot of the target's {msg}")
-                plot_columns = ["TeffA", "TeffB", "RA", "RB"]
-                plot_captions = np.array([p for c, p in zip(result_columns, theta_plot_captions)
-                                                                            if c in plot_columns])
-                fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
-                                                 captions=plot_captions, cols=4)
-                fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")
-                plt.close(fig)
 
 
         print("\n\n============================================================")
