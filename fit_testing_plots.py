@@ -100,9 +100,9 @@ if __name__ == "__main__":
             if vals is not None and name != "labels" and lbl_vals is not None:
                 print(f"Creating a result-vs-labels plot of the target's {msg}")
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
-                plot_captions = np.array([p for c, p in zip(vals.dtype.names, theta_plot_captions)
+                plot_captions = np.array([p for (c,_), p in zip(theta_captions, theta_plot_captions)
                                                                             if c in plot_columns])
                 fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
-                                                captions=plot_captions, cols=2)
+                                                 captions=plot_captions, cols=2)
                 fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")
                 plt.close(fig)
