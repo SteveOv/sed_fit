@@ -86,12 +86,13 @@ if __name__ == "__main__":
     args = ap.parse_args()
     run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
 
-    # Summarise what is to be fitted and how. Slices are useful shortcut to subset of flags/theta.
-    # fit_(Teff|loggs|radii) controls whether fixed at known vals (0), fitted to known vals (1)
-    #   or free and constrained by ratio (2)
-    #              fit:  Teffs   loggs   radii   dist  Av
-    fit_flags = np.array([2]*2 + [0]*2 + [2]*2 + [1] + [1], dtype=int)
-    fit_slices = np.array([slice(0, 2), slice(2, 4), slice(4, 6), slice(6, 7), slice(7, 8)])
+    # Summarise how the priors are handled for each theta item. Each flag controls whether the
+    # corresponding value is fixed at known val with no prior (0), constrained by a Gaussian prior
+    # for a known "truth" value, or fully free and constrained by Gaussian prior on a ratio (2).
+    #                for:  Teffs   loggs   radii   dist  Av
+    prior_flags = np.array([2]*2 + [0]*2 + [2]*2 + [1] + [1], dtype=int)
+    # These slices are useful shortcut to subset of fit|prior flags and theta.
+    theta_slices = np.array([slice(0, 2), slice(2, 4), slice(4, 6), slice(6, 7), slice(7, 8)])
 
     # Get the targets' configurations
     with open(args.targets_file, mode="r", encoding="utf8") as f:
@@ -259,10 +260,10 @@ if __name__ == "__main__":
 
                 # Print out the chosen prior values
                 msg = ""
-                for k, sl in zip(["Teff", "logg", "rad", "dist", "av"], fit_slices):
-                    if all(fit_flags[sl] == 2):
+                for k, sl in zip(["Teff", "logg", "rad", "dist", "av"], theta_slices):
+                    if all(prior_flags[sl] == 2):
                         msg += f"{k}R={ratio_priors[sl.stop-1]:.3f}, "
-                    elif all(fit_flags[sl] == 1):
+                    elif all(prior_flags[sl] == 1):
                         if sl.stop - sl.start == 1:
                             msg += f"{k}={value_priors[sl.start]:.3f}, "
                         else:
@@ -280,14 +281,17 @@ if __name__ == "__main__":
                         or not av_limits[0] <= theta[-1] <= av_limits[1]:
                         return -np.inf
 
-                    # fit_flags: 0|False fixed so no prior, 1|True val+/-err prior, 2 ratio prior
+                    # prior_flags:  0|False = fixed so no prior
+                    #               1|True  = direct Gaussian prior on a "truth" value +/- sigma
+                    #               2       = Gaussian prior on a ratio value +/- sigma
+                    # Use 1 for "truths" with uncertainties and 2 where fitting to find values
                     ret_val = 0
-                    for ti, fit_flag in enumerate(fit_flags):
-                        if fit_flag == 1:
-                            # Simple sigma constraint
+                    for ti, prior_flag in enumerate(prior_flags):
+                        if prior_flag == 1:
+                            # Simple constraint, directly treating the known prior value as a truth
                             ret_val += ((theta[ti] - value_priors[ti].n) / value_priors[ti].s)**2
-                        elif fit_flag == 2 and (ratio_prior := ratio_priors[ti]):
-                            # Ratio constraint. Ignore primary which has a ratio prior of None
+                        elif prior_flag == 2 and (ratio_prior := ratio_priors[ti]):
+                            # Ratio constraint, ignoring the primary which has no ratio
                             ret_val += ((theta[ti]/theta[ti-1] - ratio_prior.n) / ratio_prior.s)**2
                     return -0.5 * ret_val
 
@@ -300,10 +304,10 @@ if __name__ == "__main__":
 
 
                 # Initial Teffs, loggs & radii. If free fit, we use sys val modified by ratio priors
-                fit_mask = fit_flags > 0
+                fit_mask = prior_flags > 0
                 theta0 = nom_vals(value_priors)
-                for k, sl in zip(["Teff", "logg", "R"], fit_slices[:3]):
-                    if all(fit_flags[sl] == 2):
+                for k, sl in zip(["Teff", "logg", "R"], theta_slices[:3]):
+                    if all(prior_flags[sl] == 2):
                         ratio = nom_val(ratio_priors[sl.stop-1])
                         t0 = t0 = config["Teff_sys"] / 5500 if k == "R" else config[f"{k}_sys"]
                         theta0[sl] = (t0, t0*ratio) if ratio < 1 else (t0/ratio, t0)
