@@ -102,9 +102,9 @@ if __name__ == "__main__":
             if vals is not None and name != "labels" and lbl_vals is not None:
                 print(f"Creating a result-vs-labels plot of the target's {msg}")
                 hl_mask1 = hl_mask2 = hl_mask3 = np.zeros((len(vals),), bool)
-                # hl_mask1 = vals["target"] == "V436 Per"
-                # hl_mask2 = vals["target"] == "V539 Ara"
-                # hl_mask3 = vals["target"] == "MU Cas"
+                hl_mask1 = vals["target"] == "V539 Ara"     # square
+                hl_mask2 = vals["target"] == "MU Cas"       # diamond
+                hl_mask3 = vals["target"] == "not used"     # pentagon
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
                 plot_captions = np.array([p for (c,_), p in zip(theta_captions, theta_plot_captions)
                                                                             if c in plot_columns])

@@ -308,9 +308,9 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
     :captions: the plot captions - the name of each parameter
     :xlabel_prefix: the prefix text for the labels/x-axis label
     :ylabel_prefix: the prefix text for the predictions/y-axis label
-    :hl_mask1: optional mask for targets to be plotted with 1st alternative/highlight marker
-    :hl_mask2: optional mask for targets to be plotted with 2nd alternative/highlight marker
-    :hl_mask3: optional mask for targets to be plotted with 3rd alternative/highlight marker
+    :hl_mask1: optional mask for targets to be plotted with 1st highlight marker (square)
+    :hl_mask2: optional mask for targets to be plotted with 2nd highlight marker (diamond)
+    :hl_mask3: optional mask for targets to be plotted with 3rd highlight marker (pentagon)
     :big_markers: if True, or if not set and inst count < 100, then plot larger markers
     :returns: the Figure
     """
