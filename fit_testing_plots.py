@@ -12,26 +12,16 @@ import matplotlib.pyplot as plt
 
 # pylint: disable=wrong-import-position
 warnings.filterwarnings("ignore", "Using UFloat objects with std_dev==0 may give unexpected results.", category=UserWarning) # pylint: disable=line-too-long
-from uncertainties import ufloat, UFloat
+from uncertainties import ufloat
 import astropy.units as u
 from astropy.constants.iau2015 import R_sun, L_sun
 from astropy.constants import sigma_sb
 
 from support.plots import plot_hr_diagram, plot_predictions_vs_labels
-
+from fit_testing import theta_plot_captions, theta_captions
 
 # Use a non-interactive matplotlib backend to avoid threading errors.
 mpl_use("agg")
-
-subs = ["A", "B"] # Fixed at 2 stars
-theta_plot_captions = np.array([f"$T_{{\\rm eff,{sub}}} / {{\\rm K}}$" for sub in subs] \
-                            +[f"$\\log{{g}}_{{\\rm {sub}}}$" for sub in subs] \
-                            +[f"$R_{{\\rm {sub}}} / {{\\rm R_{{\\odot}}}}$" for sub in subs] \
-                            +["${\\rm dist} / {\\rm pc}$", "${\\rm A_{V}}$"])
-theta_captions = np.array([(f"Teff{sub}", u.K) for sub in subs] \
-                        +[(f"logg{sub}", u.dex) for sub in subs] \
-                        +[(f"R{sub}", u.Rsun) for sub in subs] \
-                        +[("dist", u.pc), ("av", u.dimensionless_unscaled)])
 
 
 def read_result_csv(csv_file: Path):
@@ -69,6 +59,8 @@ if __name__ == "__main__":
         mcmc_vals = read_result_csv(drop_dir / "mcmc-results.csv")
         lbl_vals = read_result_csv(drop_dir / "labels.csv")
 
+        nstars = (len(fit_vals.dtype) - 3) // 3 # ignoring the target, dist & av columns
+
         print()
         for vals, name, msg in [(fit_vals, "min", "fitting results"),
                                 (mcmc_vals, "mcmc", "MCMC sampling results"),
@@ -97,7 +89,8 @@ if __name__ == "__main__":
                 hl_mask2 = vals["target"] == "MU Cas"       # diamond
                 hl_mask3 = vals["target"] == "not used"     # pentagon
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
-                plot_captions = np.array([p for (c,_), p in zip(theta_captions, theta_plot_captions)
+                plot_captions = np.array([p for (c,_), p in zip(theta_captions(nstars),
+                                                                theta_plot_captions(nstars))
                                                                             if c in plot_columns])
                 fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
                                                  captions=plot_captions, hl_mask1=hl_mask1,

@@ -46,25 +46,29 @@ from sed_fit.stellar_grids import StellarGrid
 mpl_use("agg")
 
 def subs(num_stars: int=2):
+    """ Iterate of subs for the requested number of stars """
     return ("ABCDEFGHIJKLM"[n] for n in range(num_stars))
 
 def theta_plot_captions(num_stars: int=2) -> np.ndarray[str]:
-    return np.array([f"$T_{{\\rm eff,{sub}}} / {{\\rm K}}$" for sub in subs(nstars)] \
-                    + [f"$\\log{{g}}_{{\\rm {sub}}}$" for sub in subs(nstars)] \
-                    + [f"$R_{{\\rm {sub}}} / {{\\rm R_{{\\odot}}}}$" for sub in subs(nstars)] \
+    """ Get the theta  plot captions array for the requested number of stars """
+    return np.array([f"$T_{{\\rm eff,{sub}}} / {{\\rm K}}$" for sub in subs(num_stars)] \
+                    + [f"$\\log{{g}}_{{\\rm {sub}}}$" for sub in subs(num_stars)] \
+                    + [f"$R_{{\\rm {sub}}} / {{\\rm R_{{\\odot}}}}$" for sub in subs(num_stars)] \
                     + ["${\\rm dist} / {\\rm pc}$", "${\\rm A_{V}}$"])
 
 def theta_captions(num_stars: int=2) -> np.ndarray[tuple[str, u.UnitBase]]:
-    return np.array([(f"Teff{sub}", u.K) for sub in subs(nstars)] \
-                    + [(f"logg{sub}", u.dex) for sub in subs(nstars)] \
-                    + [(f"R{sub}", u.Rsun) for sub in subs(nstars)] \
+    """ Get the theta captions array for the requested number of stars """
+    return np.array([(f"Teff{sub}", u.K) for sub in subs(num_stars)] \
+                    + [(f"logg{sub}", u.dex) for sub in subs(num_stars)] \
+                    + [(f"R{sub}", u.Rsun) for sub in subs(num_stars)] \
                     + [("dist", u.pc), ("av", u.dimensionless_unscaled)])
 
 def result_colnames(num_stars: int=2, label_cols: bool=False) -> List[str]:
-    cols = [t for t, _ in theta_captions(num_stars)]
+    """ Get the csv column names for the requested number of stars """
+    ret_cols = [t for t, _ in theta_captions(num_stars)]
     if label_cols:
-        return cols + [f"logL{sub}" for sub in subs(nstars)]
-    return cols
+        return ret_cols + [f"logL{sub}" for sub in subs(num_stars)]
+    return ret_cols
 
 def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
                         known_values_dict: dict, labels: np.ndarray):
