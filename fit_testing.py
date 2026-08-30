@@ -90,7 +90,7 @@ if __name__ == "__main__":
     # corresponding value is fixed at known val with no prior (0), constrained by a Gaussian prior
     # for a known "truth" value, or fully free and constrained by Gaussian prior on a ratio (2).
     #                for:  Teffs   loggs   radii   dist  Av
-    prior_flags = np.array([2]*2 + [0]*2 + [2]*2 + [1] + [1], dtype=int)
+    prior_flags = np.array([2]*2 + [1]*2 + [2]*2 + [1] + [1], dtype=int)
     # These slices are useful shortcut to subset of fit|prior flags and theta.
     theta_slices = np.array([slice(0, 2), slice(2, 4), slice(4, 6), slice(6, 7), slice(7, 8)])
 
