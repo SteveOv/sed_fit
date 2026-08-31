@@ -13,7 +13,7 @@
         "sed_tabname_exclusions": ["J/ApJS/235/6/catalog", "III/117/tables", "I/353/gsc242"],
         "source": "Southworth & Bowman (2022MNRAS.513.3191S) Table 3. Teffs reproduced from Clausen (1996A&A...308..151C).",
         "citation_key": "SouthworthBowman22mnras, Clausen96aa",
-        "revisions": "Uses a revised AV value of 0.50(5) from trial fits where all params where fitted to published values & AV left free. Normal fit uses Gontcharov AV of 0.353(124). This improves the fitting of R at the expense of Teff. All other params unchanged.",
+        "revisions": "Gaia ruwe indicates potentially unreliable parallax solution. A fit with all params constrained to published values, except dist which is free to fit, yields a distance of 335.112+/-6.358 pc.",
         "SpT": "B3 V + B4 V",
         "MA": 6.239,            "MA_err": 0.066,
         "MB": 5.313,            "MB_err": 0.060,
@@ -27,7 +27,8 @@
         "logLB": 2.993,         "logLB_err": 0.052,
         "LR": 0.5912,           "LR_err": 0.0057,
         "k": 0.786,             "k_err": 0.009,
-        "av": 0.50,            "av_err": 0.05
+        "dist": 335.112,        "dist_err": 6.358,
+        "dist_bibcode": "sedfit for distance"
     },
     "MU Cas": {
         "search_term": "V* MU Cas",
@@ -91,22 +92,22 @@
         "LR": 0.933,            "LR_err": 0.091,
         "av": 0.8,              "av_err": 0.05
     },
-        "V596 Pup": {
+    "V596 Pup": {
         "search_term": "V* V596 Pup",
         "aka": "TIC 144085463, HD 71581",
         "gaia_dr3_id": 5706279565053294848,
         "ruwe": 4.8433,
         "ra": 126.88869504955429,
         "dec": -20.844021578356617,
-        "parallax": 6.143,
-        "parallax_err": 0.083, 
+        "parallax": 5.605,
+        "parallax_err": 0.079, 
         "parallax_bibcode": "2025Obs...145..102S",
         "sed_filter_exclusions": [],
         "sed_tabname_exclusions": ["J/ApJS/235/6/catalog", "II/358/smss"],
         "source": "Southworth (2025Obs...145..102S) Rediscussion 24, Tables II & III.",
         "citation_key": "Southworth25obsR24",
         "notes": "Gaia parallax/distance (232+/-9 pc) is unreliable (ruwe ~4.8) and from Hipparcos a highly uncertain 222(+63/-40) pc. Southworth calculates distances with Kervella relations of 162.8+/-2.2 pc (par' 6.143+/-0.083) and with Girardi bolometric corrections of 165.1+/-2.3 pc (par' 6.057+/-0.084), with an E(B-V)=0.07+/-0.02. The final value of 178.4+/-2.5 pc is given with caveats.",
-        "revisions": "Changed parallax to reflect the shorter distance of 165.1+/-2.3 pc that Southworth found with the Girardi bolometric corrections.",
+        "revisions": "Overriding to a lower distance of 162.8+/-2.2 pc that Southworth found with the Girardi bolometric corrections.",
         "SpT": "A1 V + A1 V",
         "MA": 2.098,            "MA_err": 0.021,
         "MB": 2.091,            "MB_err": 0.018,
@@ -120,6 +121,8 @@
         "logLB": 1.526,         "logLB_err": 0.037,
         "LR": 0.9629,           "LR_err": 0.0051,
         "k": 0.9820,            "k_err": 0.0027,
-        "ebv": 0.07,            "ebv_err": 0.02
+        "ebv": 0.07,            "ebv_err": 0.02,
+        "dist": 162.8,          "dist_err": 2.2,
+        "dist_bibcode": "2025Obs...145..102S"
     }
 }

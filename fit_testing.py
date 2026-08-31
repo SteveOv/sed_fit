@@ -82,8 +82,8 @@ def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
         print(f"{param:>12s}{'*' if fitted else ' '} =", format_value(val, unit, kval))
     if "source" in known_values_dict:
         print("Source(s) of known values:", known_values_dict["source"])
-    if "parallax_bibcode" in known_values_dict:
-        print("Source of parallax/distance:", known_values_dict["parallax_bibcode"])
+    if "dist_bibcode" in known_values_dict:
+        print("Source of distance:", known_values_dict["dist_bibcode"])
 
 
 if __name__ == "__main__":
@@ -210,12 +210,17 @@ if __name__ == "__main__":
                         config["dec"] = _tbl["dec"][0]                          # deg
                         config["parallax"] = _tbl["parallax"][0]
                         config["parallax_err"] = _tbl["parallax_error"][0]
+                        config["parallax_bibcode"] = "2022yCat.1355....0G"
 
                 # Get the distance and store it as a label
-                dist = 1000 / ufloat(config["parallax"], config.get("parallax_err", None) or 0) # pc
-                config.setdefault("dist", dist.n)
-                config.setdefault("dist_err", dist.s)
-
+                if "dist" in config:
+                    dist = ufloat(config["dist"], config.get("dist_err", None) or 0)
+                    print(f"Using distance from config of: {dist:.3f} pc")
+                else:
+                    dist = 1000 / ufloat(config["parallax"], config.get("parallax_err", None) or 0)
+                    print(f"Using distance from parallax of: {dist:.3f} pc")
+                    config["dist"], config["dist_err"] = dist.n, dist.s
+                    config["dist_bibcode"] = config.get("parallax_bibcode", "")
 
 
                 # Read the SED for target, de-duplicate then apply any range and exclusion filters.
@@ -276,7 +281,10 @@ if __name__ == "__main__":
                 msg = ""
                 for c, sl in zip(["Teff", "logg", "rad", "dist", "av"], theta_slices):
                     if all(prior_flags[sl] == 2):
-                        msg += f"{c}R={ratio_priors[sl.stop-1]:.3f}, "
+                        if sl.stop - sl.start == 1:
+                            msg += f"{c}=<free>, "
+                        else:
+                            msg += f"{c}R={ratio_priors[sl.stop-1]:.3f}, "
                     elif all(prior_flags[sl] == 1):
                         if sl.stop - sl.start == 1:
                             msg += f"{c}={value_priors[sl.start]:.3f}, "
@@ -285,6 +293,7 @@ if __name__ == "__main__":
                                 msg += f"{c}{sub}={vp:.3f}, "
                 print("\nPriors:", msg.rstrip(", "))
 
+                nratio_priors = len(ratio_priors)
                 def ln_prior_func(theta: np.ndarray[float]) -> float:
                     """ fitting prior callback function to evaluate the current candidate theta """
                     # pylint: disable=cell-var-from-loop
@@ -297,7 +306,7 @@ if __name__ == "__main__":
 
                     # prior_flags:  0|False = fixed so no prior
                     #               1|True  = direct Gaussian prior on a "truth" value +/- sigma
-                    #               2       = Gaussian prior on a ratio value +/- sigma
+                    #               2       = Gaussian prior if there is a ratio value +/- sigma
                     # Use 1 for "truths" with uncertainties and 2 where fitting to find values
                     # TODO: handle multiple ratios for >2 stars
                     ret_val = 0
@@ -305,7 +314,8 @@ if __name__ == "__main__":
                         if prior_flag == 1:
                             # Simple constraint, directly treating the known prior value as a truth
                             ret_val += ((theta[ti] - value_priors[ti].n) / value_priors[ti].s)**2
-                        elif prior_flag == 2 and (ratio_prior := ratio_priors[ti]):
+                        elif prior_flag == 2 \
+                                and ti < nratio_priors and (ratio_prior := ratio_priors[ti]):
                             # Ratio constraint, ignoring the primary which has no ratio
                             ret_val += ((theta[ti]/theta[ti-1] - ratio_prior.n) / ratio_prior.s)**2
                     return -0.5 * ret_val
