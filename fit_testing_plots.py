@@ -35,9 +35,10 @@ def read_result_csv(csv_file: Path):
         # Yet to convince genfromtxt to use a ufloat converter so we're falling back on manual parse
         if "TeffA_err" in raw.dtype.names:
             out_dtype = [(n, object) for n in raw.dtype.names if not n.endswith("_err")]
+            rows = (r for r in raw) if raw.size > 1 else [raw]
             temp = [tuple(ufloat(r[c], r[f"{c}_err"]) if f"{c}_err" in r.dtype.names else r[c]
                                                                             for c, _ in out_dtype)
-                                                                                for r in raw]
+                                                                                for r in rows]
             values = np.array(temp, dtype=out_dtype)
         else: # It's a result file without uncertainties. We can us it as is.
             values = raw
@@ -84,7 +85,6 @@ if __name__ == "__main__":
             # Plots of result vs label values.
             if vals is not None and name != "labels" and lbl_vals is not None:
                 print(f"Creating a result-vs-labels plot of the target's {msg}")
-                hl_mask1 = hl_mask2 = hl_mask3 = np.zeros((len(vals),), bool)
                 hl_mask1 = vals["target"] == "V539 Ara"     # square
                 hl_mask2 = vals["target"] == "MU Cas"       # diamond
                 hl_mask3 = vals["target"] == "not used"     # pentagon

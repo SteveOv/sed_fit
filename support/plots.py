@@ -315,15 +315,15 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
     :returns: the Figure
     """
     param_count = len(list(fitted_values.dtype.names))
-    inst_count = fitted_values.shape[0]
-    if label_values.shape[0] != inst_count:
-        raise ValueError("labels are of a different length to the fitted_values")
-    if hl_mask1 is not None and hl_mask1.shape[0] != inst_count:
-        raise ValueError("hl_mask1 are given with a different length to the fitted_values")
-    if hl_mask2 is not None and hl_mask2.shape[0] != inst_count:
-        raise ValueError("hl_mask2 are given with a different length to the fitted_values")
-    if hl_mask3 is not None and hl_mask3.shape[0] != inst_count:
-        raise ValueError("hl_mask3 are given with a different length to the fitted_values")
+    inst_count = fitted_values.size
+    if label_values.size != inst_count:
+        raise ValueError("label_values are a different size to the fitted_values")
+    if hl_mask1 is not None and hl_mask1.size != inst_count:
+        raise ValueError("hl_mask1 are a different size to the fitted_values")
+    if hl_mask2 is not None and hl_mask2.size != inst_count:
+        raise ValueError("hl_mask2 are a different size to the fitted_values")
+    if hl_mask3 is not None and hl_mask3.size != inst_count:
+        raise ValueError("hl_mask3 are a different size to the fitted_values")
     if captions.shape[0] != param_count:
         raise ValueError("captions are of a different length to the number of params")
 
@@ -352,7 +352,7 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
         fmt = ["o", "s", "D", "p"]
         c = [plot_colors[0], plot_colors[4], plot_colors[4], plot_colors[4]]
         ms = [7.0, 10.5, 10.5, 10.5]
-        alpha = [(0.66 if any(hl_mask1) or any(hl_mask2) else 1.0), 1.0, 1.0, 1.0]
+        alpha = [(0.66 if np.any(hl_mask1 | hl_mask2 | hl_mask3) else 1.0), 1.0, 1.0, 1.0]
     else:
         fmt = ["o", "o", "o", "o"]
         c = [plot_colors[0], plot_colors[1], plot_colors[4], plot_colors[4]]
@@ -388,7 +388,7 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
                 (hl_mask2,                  2,      False),
                 (hl_mask3,                  3,      False),
             ]:
-                if any(mask):
+                if np.any(mask):
                     fs = "full" if filled else "none"
                     ax.errorbar(x=lbl_vals[mask], y=fit_vals[mask],
                                 xerr=lbl_errs[mask], yerr=fit_errs[mask], capsize=None,
