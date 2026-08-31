@@ -297,6 +297,7 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
                                hl_mask1: np.ndarray[bool]=None,
                                hl_mask2: np.ndarray[bool]=None,
                                hl_mask3: np.ndarray[bool]=None,
+                               fill_mask: np.ndarray[bool]=None,
                                cols: int=2,
                                big_markers: bool=None) -> _Figure:
     """
@@ -311,21 +312,24 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
     :hl_mask1: optional mask for targets to be plotted with 1st highlight marker (square)
     :hl_mask2: optional mask for targets to be plotted with 2nd highlight marker (diamond)
     :hl_mask3: optional mask for targets to be plotted with 3rd highlight marker (pentagon)
+    :fill_mask: optional mask for targets to be plotted with a filled marker
     :big_markers: if True, or if not set and inst count < 100, then plot larger markers
     :returns: the Figure
     """
     param_count = len(list(fitted_values.dtype.names))
     inst_count = fitted_values.size
     if label_values.size != inst_count:
-        raise ValueError("label_values are a different size to the fitted_values")
+        raise ValueError("label_values is a different size to the fitted_values")
     if hl_mask1 is not None and hl_mask1.size != inst_count:
-        raise ValueError("hl_mask1 are a different size to the fitted_values")
+        raise ValueError("hl_mask1 is a different size to the fitted_values")
     if hl_mask2 is not None and hl_mask2.size != inst_count:
-        raise ValueError("hl_mask2 are a different size to the fitted_values")
+        raise ValueError("hl_mask2 is a different size to the fitted_values")
     if hl_mask3 is not None and hl_mask3.size != inst_count:
-        raise ValueError("hl_mask3 are a different size to the fitted_values")
+        raise ValueError("hl_mask3 is a different size to the fitted_values")
+    if fill_mask is not None and hl_mask3.size != inst_count:
+        raise ValueError("fill_mask is a different size to the fitted_values")
     if captions.shape[0] != param_count:
-        raise ValueError("captions are of a different length to the number of params")
+        raise ValueError("captions is of a different length to the number of params")
 
     # Colours to use to ensure consistency across plots.
     # Attempted to select for accessibility (i.e.: contrast, consideration of colour blindness)
@@ -339,6 +343,9 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
         hl_mask2 = np.zeros((inst_count), dtype=bool)
     if hl_mask3 is None:
         hl_mask3 = np.zeros((inst_count), dtype=bool)
+    if fill_mask is None:
+        fill_mask = np.zeros((inst_count), dtype=bool)
+    fillstyles = np.where(fill_mask, "full", "none")
 
     # Special aspect ratio for each axes of 3.0:2.9, slightly wider than high, to look balanced
     # with a sqaure plot area and slightly more width for y-tick labels than those for x-ticks.
@@ -381,17 +388,11 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
             ax.plot(vdiag, vdiag, color=ref_line_color, linestyle="--", linewidth=1.0, zorder=-10)
 
             # in order of increasing z
-            non_hl_mask = ~hl_mask1 & ~hl_mask2
-            for (mask,                      fix,    filled) in [
-                (non_hl_mask,               0,      False),
-                (hl_mask1,                  1,      False),
-                (hl_mask2,                  2,      False),
-                (hl_mask3,                  3,      False),
-            ]:
-                if np.any(mask):
-                    fs = "full" if filled else "none"
-                    ax.errorbar(x=lbl_vals[mask], y=fit_vals[mask],
-                                xerr=lbl_errs[mask], yerr=fit_errs[mask], capsize=None,
+            non_hl_mask = ~(hl_mask1 | hl_mask2 | hl_mask3)
+            for fix, mask in enumerate([non_hl_mask, hl_mask1, hl_mask2, hl_mask3]):
+                for x, y, xerr, yerr, fs in zip(lbl_vals[mask], fit_vals[mask],
+                                                lbl_errs[mask], fit_errs[mask], fillstyles[mask]):
+                    ax.errorbar(x=x, y=y, xerr=xerr, yerr=yerr, capsize=None,
                                 c=c[fix], lw=ms[fix]/7.5, markeredgewidth=ms[fix]/7.5,
                                 fmt=fmt[fix], ms=ms[fix]*0.66, alpha=alpha[fix], fillstyle=fs)
 
