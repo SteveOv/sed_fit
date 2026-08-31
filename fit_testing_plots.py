@@ -85,15 +85,17 @@ if __name__ == "__main__":
             # Plots of result vs label values.
             if vals is not None and name != "labels" and lbl_vals is not None:
                 print(f"Creating a result-vs-labels plot of the target's {msg}")
-                hl_mask1 = vals["target"] == "V539 Ara"     # square
-                hl_mask2 = vals["target"] == "MU Cas"       # diamond
-                hl_mask3 = vals["target"] == "not used"     # pentagon
+                hl_mask1 = np.isin(vals["target"], ["V539 Ara", "V889 Aql"])    # square
+                hl_mask2 = np.isin(vals["target"], ["MU Cas", "V596 Pup"])      # diamond
+                hl_mask3 = np.isin(vals["target"], ["not used"])                # pentagon
+                fill_mask = np.isin(vals["target"], ["V539 Ara", "MU Cas"])
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
                 plot_captions = np.array([p for (c,_), p in zip(theta_captions(nstars),
                                                                 theta_plot_captions(nstars))
                                                                             if c in plot_columns])
                 fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
-                                                 captions=plot_captions, hl_mask1=hl_mask1,
-                                                 hl_mask2=hl_mask2, hl_mask3=hl_mask3, cols=2)
+                                                 captions=plot_captions, cols=2,
+                                                 hl_mask1=hl_mask1, hl_mask2=hl_mask2,
+                                                 hl_mask3=hl_mask3, fill_mask=fill_mask)
                 fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")
                 plt.close(fig)
