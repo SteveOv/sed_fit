@@ -13,12 +13,11 @@ import matplotlib.pyplot as plt
 # pylint: disable=wrong-import-position
 warnings.filterwarnings("ignore", "Using UFloat objects with std_dev==0 may give unexpected results.", category=UserWarning) # pylint: disable=line-too-long
 from uncertainties import ufloat
-import astropy.units as u
 from astropy.constants.iau2015 import R_sun, L_sun
 from astropy.constants import sigma_sb
 
 from support.plots import plot_hr_diagram, plot_predictions_vs_labels
-from fit_testing import theta_plot_captions, theta_captions
+from fit_testing import theta_plot_captions, theta_captions, subs
 
 # Use a non-interactive matplotlib backend to avoid threading errors.
 mpl_use("agg")
@@ -61,6 +60,7 @@ if __name__ == "__main__":
         lbl_vals = read_result_csv(drop_dir / "labels.csv")
 
         nstars = (len(fit_vals.dtype) - 3) // 3 # ignoring the target, dist & av columns
+        print(f"Found the results for {nstars} star(s) in min-results.csv")
 
         print()
         for vals, name, msg in [(fit_vals, "min", "fitting results"),
@@ -72,13 +72,14 @@ if __name__ == "__main__":
                 print(f"Creating a H-R plot of the target's {msg}")
                 lums = None
                 if "LogLA" in vals.dtype.names:
-                    lums = 10**np.array([vals["logLA"], vals["logLA"]])
+                    lums = 10**np.array([vals[f"logL{sub}"] for sub in subs(nstars)])
                 else:
-                    teffs = np.array([vals["TeffA"], vals["TeffB"]])
-                    rads = np.array([vals["RA"], vals["RB"]])
+                    teffs = np.array([vals[f"Teff{sub}"] for sub in subs(nstars)])
+                    rads = np.array([vals[f"R{sub}"] for sub in subs(nstars)])
                     lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
-                fig = plot_hr_diagram(teffs, lums, ["star A", "star B"], True, legend_loc="best",
-                                    invertx=True, xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
+                fig = plot_hr_diagram(teffs, lums, [f"star {sub}" for sub in subs(nstars)],
+                                      plot_zams=True, legend_loc="best", invertx=True,
+                                      xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
                 fig.savefig(figs_dir / f"h-r-{name}.pdf")
                 plt.close(fig)
 
@@ -90,11 +91,13 @@ if __name__ == "__main__":
                 hl_mask3 = np.isin(vals["target"], ["not used"])                # pentagon
                 fill_mask = np.isin(vals["target"], ["V539 Ara", "MU Cas"])
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
+
+                plot_columns = [f"{c}{sub}" for c in ["Teff", "R"] for sub in subs(nstars)]
                 plot_captions = np.array([p for (c,_), p in zip(theta_captions(nstars),
                                                                 theta_plot_captions(nstars))
                                                                             if c in plot_columns])
                 fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
-                                                 captions=plot_captions, cols=2,
+                                                 captions=plot_captions, cols=nstars,
                                                  hl_mask1=hl_mask1, hl_mask2=hl_mask2,
                                                  hl_mask3=hl_mask3, fill_mask=fill_mask)
                 fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")

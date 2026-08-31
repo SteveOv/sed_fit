@@ -254,12 +254,13 @@ def plot_hr_diagram(teffs: ArrayLike,
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
     labels = labels or [None] * teffs.shape[0]
-    fillstyles = (["full", "none"] * len(labels))[:len(labels)]
-    for ix, (teffn, teffe, lumn, lume, label, fs) in enumerate(zip(teff_noms, teff_errs,
-                                                               lum_noms, lum_errs,
-                                                               labels, fillstyles)):
+    fmts = _cycle_for(["o", "o", "D", "D", "h", "h", "p", "p"], teffs.shape[0])
+    fillstyles = _cycle_for(["full", "none"], teffs.shape[0])
+    for ix, (teffn, teffe, lumn, lume, label, fmt, fs) in enumerate(zip(teff_noms, teff_errs,
+                                                                    lum_noms, lum_errs,
+                                                                    labels, fmts, fillstyles)):
         ax.errorbar(x=teffn, xerr=teffe, y=lumn, yerr=lume,
-                    fmt="o", ms=ms, lw=1.0, markeredgewidth=1.0,
+                    fmt=fmt, ms=ms, lw=1.0, markeredgewidth=1.0,
                     fillstyle=fs, zorder=ix, label=label)
 
     xlim = (min(3000, max(np.min(teff_noms - teff_errs) * 0.8, 1e-3)),
