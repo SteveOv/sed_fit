@@ -224,6 +224,77 @@ def plot_sed_on_axes(ax: _Axes,
                             mew=0.75, elinewidth=0.75, alpha=alpha, label=label)
 
 
+def plot_model_spectra(theta: ArrayLike,
+                       model_grid: SvoStellarGrid,
+                       show_component_spectra: bool=True,
+                       show_combined_spectrum: bool=False,
+                       show_legend: bool=True,
+                       labels: ArrayLike=None,
+                       show_grid: bool=True,
+                       figsize: Tuple[float, float]=(6, 4),
+                       num_points: int=5000,
+                       lam_from: float=None,
+                       lam_to: float=None,
+                       **format_kwargs):
+    """
+    Shows model spectra for theta.
+
+    The data and axes will be coerced to units of x=wavelength [um] and y=nu*F(nu) [W / m^2].
+    The axes will be set to log-log scale.
+
+    :theta: the fitting parameters as passed to sed_fit model_func
+    :model_grid: the StellarGrid supplying the model fluxes to the fitting
+    :show_component_spectra: include a low alpha plot of the spectrum for each component
+    :show_combined_spectrum: include a plot of the combined spectrum for the system
+    :show_legend: whether to show the legend
+    :labels: labels to show in legend, or none to let them default to star A, star B, ...
+    :show_grid: whether to show a grid within the ax or not
+    :figsize: size to create the figure
+    :format_kwargs: kwargs to be passed on to format_axes()
+    :returns: the final Figure
+    """
+    theta_noms = nominal_values(theta)
+    nstars = (theta.shape[0] - 2) // 3
+    if show_legend:
+        if labels is None:
+            subs = ["ABCDEFGHIJKLM"[n] for n in range(nstars)]
+            labels = [f"star {sub}" for sub in subs]
+    else:
+        labels = [None] * (nstars)
+    if len(labels) != nstars:
+        raise ValueError(f"Number of labels {len(labels)} mismatch with number of stars {nstars}")
+
+    fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
+    xlabel = f"Wavelength ({lam_unit:latex_inline})"
+    ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({flux_unit:latex_inline})"
+
+    def plot_spec(lams, flux, color, alpha, label, zorder=-100):
+        vfv = flux.to(flux_unit, equivalencies=u.spectral() + u.spectral_density(lams))
+        ax.plot(lams, vfv, c=color, alpha=alpha, lw=0.75, zorder=zorder, label=label)
+
+    lam_from = lam_from or min(model_grid.wavelength_range)
+    lam_to = lam_to  or max(model_grid.wavelength_range)
+    spec_lams = np.geomspace(lam_from, lam_to, num_points) * model_grid.wavelength_unit
+    comb_spec_flux = np.zeros((num_points), dtype=float)
+    for (teff, logg, rad, dist, av), lbl in zip(iterate_theta(theta_noms), labels):
+        spec_flux = model_grid.get_fluxes(wavelengths=spec_lams, teff=teff,
+                                          logg=logg, radius=rad, distance=dist, av=av)
+        comb_spec_flux += spec_flux
+        if show_component_spectra:
+            alpha = 0.75 if show_combined_spectrum else 1.0
+            plot_spec(spec_lams, spec_flux * model_grid.flux_unit, None, alpha, lbl)
+
+    if show_combined_spectrum:
+        plot_spec(spec_lams, comb_spec_flux * model_grid.flux_unit, "b", 1, "combined")
+
+    ax.set(xscale="log", xlabel=xlabel, yscale="log", ylabel=ylabel)
+
+    if show_grid:
+        ax.grid(True, which="both", axis="both", alpha=0.33, color="lightgray")
+    format_axes(ax, legend_loc="best" if show_legend else None, **format_kwargs)
+    return fig
+
+
 def plot_hr_diagram(teffs: ArrayLike,
                     luminosities: ArrayLike,
                     labels: ArrayLike=None,

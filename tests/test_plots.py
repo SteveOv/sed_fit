@@ -11,7 +11,7 @@ from dust_extinction.parameter_averages import G23
 
 from sed_fit.stellar_grids import get_stellar_grid
 from support.sed import get_sed_for_target, retain_only_closest_observations
-from support.plots import plot_sed, plot_fitted_model
+from support.plots import plot_sed, plot_fitted_model, plot_model_spectra
 
 class Testplots(unittest.TestCase):
     """ Tests for the plots module. """
@@ -83,3 +83,59 @@ class Testplots(unittest.TestCase):
                                 figsize=(6, 4))
         # fig.savefig("./drop/cw-cma-fitted-sed.pdf")
         plt.show(block=True)
+
+
+    def test_plot_model_spectra_vary_teffs(self):
+        """ Interactive test for producing plot of the effect of varying Teff on SED """
+
+        # Same size star (fixed distance and no exinction) at different effective temperatures
+        theta = np.array([20000, 10000, 7000, 5000, 4000, 3000,
+                          4, 4, 4, 4, 4, 4,
+                          1, 1, 1, 1, 1, 1,
+                          50,
+                          0])
+        labels = [f"{v} K" for v in theta if v > 1000]
+
+        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
+        fig = plot_model_spectra(theta=theta,
+                                 model_grid=stellar_grid,
+                                 show_component_spectra=True,
+                                 show_combined_spectrum=False,
+                                 show_legend=True,
+                                 labels=labels,
+                                 show_grid=True,
+                                 figsize=(6, 4),
+                                 num_points=2000,
+                                 lam_from=0.3,
+                                 lam_to=30)
+
+        fig.savefig("./drop/model-spectra-vary-teffs.pdf")
+        # plt.show(block=True)
+
+
+    def test_plot_model_spectra_vary_radius(self):
+        """ Interactive test for producing plot of the effect of varying radius on SED """
+
+        # Same effective temperature (fixed distance and no exinction) at different radii
+        theta = np.array([5000, 5000, 5000, 5000, 5000, 5000,
+                          4, 4, 4, 4, 4, 4,
+                          5, 4, 3, 2, 1, 0.5,
+                          50,
+                          0])
+        labels = [f"${v}\\,{{\\rm R_{{\\odot}}}}$" for v in theta[12:18]]
+
+        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
+        fig = plot_model_spectra(theta=theta,
+                                 model_grid=stellar_grid,
+                                 show_component_spectra=True,
+                                 show_combined_spectrum=False,
+                                 show_legend=True,
+                                 labels=labels,
+                                 show_grid=True,
+                                 figsize=(6, 4),
+                                 num_points=2000,
+                                 lam_from=0.3,
+                                 lam_to=30)
+
+        fig.savefig("./drop/model-spectra-vary-radius.pdf")
+        # plt.show(block=True)
