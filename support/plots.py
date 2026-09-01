@@ -235,6 +235,8 @@ def plot_model_spectra(theta: ArrayLike,
                        num_points: int=5000,
                        lam_from: float=None,
                        lam_to: float=None,
+                       log_log_axes: bool=True,
+                       plot_flux_unit: u.UnitBase=None,
                        **format_kwargs):
     """
     Shows model spectra for theta.
@@ -250,6 +252,11 @@ def plot_model_spectra(theta: ArrayLike,
     :labels: labels to show in legend, or none to let them default to star A, star B, ...
     :show_grid: whether to show a grid within the ax or not
     :figsize: size to create the figure
+    :num_points: the number of individual fluxes to calculate, with higher giving more detail
+    :lam_from: the minimum wavelength to plot
+    :lam_to: the maximum wavelngth to plot
+    :log_log_axes: whether to set both axes on a log (True) or linear (False) scale
+    :plot_flux_unitplot_flux_unit: the flux unit to plot if not the grid's flux unit
     :format_kwargs: kwargs to be passed on to format_axes()
     :returns: the final Figure
     """
@@ -263,31 +270,36 @@ def plot_model_spectra(theta: ArrayLike,
         labels = [None] * (nstars)
     if len(labels) != nstars:
         raise ValueError(f"Number of labels {len(labels)} mismatch with number of stars {nstars}")
-
-    fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
-    xlabel = f"Wavelength ({lam_unit:latex_inline})"
-    ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({flux_unit:latex_inline})"
-
-    def plot_spec(lams, flux, color, alpha, label, zorder=-100):
-        vfv = flux.to(flux_unit, equivalencies=u.spectral() + u.spectral_density(lams))
-        ax.plot(lams, vfv, c=color, alpha=alpha, lw=0.75, zorder=zorder, label=label)
+    if plot_flux_unit is None:
+        plot_flux_unit = model_grid.flux_unit
 
     lam_from = lam_from or min(model_grid.wavelength_range)
     lam_to = lam_to  or max(model_grid.wavelength_range)
     spec_lams = np.geomspace(lam_from, lam_to, num_points) * model_grid.wavelength_unit
-    comb_spec_flux = np.zeros((num_points), dtype=float)
-    for (teff, logg, rad, dist, av), lbl in zip(iterate_theta(theta_noms), labels):
-        spec_flux = model_grid.get_fluxes(wavelengths=spec_lams, teff=teff,
-                                          logg=logg, radius=rad, distance=dist, av=av)
-        comb_spec_flux += spec_flux
-        if show_component_spectra:
-            alpha = 0.75 if show_combined_spectrum else 1.0
-            plot_spec(spec_lams, spec_flux * model_grid.flux_unit, None, alpha, lbl)
 
-    if show_combined_spectrum:
-        plot_spec(spec_lams, comb_spec_flux * model_grid.flux_unit, "b", 1, "combined")
+    fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
+    xlabel = f"Wavelength ({lam_unit:latex_inline})"
+    if plot_flux_unit.is_equivalent(u.W / u.m**2, equivalencies=u.spectral()):
+        ylabel = f"${{\\rm \\nu F(\\nu)}}$ ({plot_flux_unit:latex_inline})"
+    else:
+        ylabel = f"Flux ({plot_flux_unit:latex_inline})"
 
-    ax.set(xscale="log", xlabel=xlabel, yscale="log", ylabel=ylabel)
+    with u.set_enabled_equivalencies(u.spectral() + u.spectral_density(spec_lams)):
+        comb_spec_flux = np.zeros((num_points), dtype=float)
+        for (teff, logg, rad, dist, av), lbl in zip(iterate_theta(theta_noms), labels):
+            spec_flux = model_grid.get_fluxes(wavelengths=spec_lams, teff=teff,
+                                              logg=logg, radius=rad, distance=dist, av=av)
+            comb_spec_flux += spec_flux
+            if show_component_spectra:
+                ax.plot(spec_lams, (spec_flux * model_grid.flux_unit).to(plot_flux_unit),
+                        alpha=(0.75 if show_combined_spectrum else 1.0), lw=0.75, label=lbl)
+
+        if show_combined_spectrum:
+            ax.plot(spec_lams, (comb_spec_flux * model_grid.flux_unit) * plot_flux_unit,
+                    c="b", alpha=1, lw=.75, label="combined")
+
+    scale = "log" if log_log_axes else "linear"
+    ax.set(xscale=scale, xlabel=xlabel, yscale=scale, ylabel=ylabel)
 
     if show_grid:
         ax.grid(True, which="both", axis="both", alpha=0.33, color="lightgray")

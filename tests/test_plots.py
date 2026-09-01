@@ -12,6 +12,7 @@ from dust_extinction.parameter_averages import G23
 from sed_fit.stellar_grids import get_stellar_grid
 from support.sed import get_sed_for_target, retain_only_closest_observations
 from support.plots import plot_sed, plot_fitted_model, plot_model_spectra
+from support.utils import to_file_safe_str
 
 class Testplots(unittest.TestCase):
     """ Tests for the plots module. """
@@ -84,7 +85,7 @@ class Testplots(unittest.TestCase):
         # fig.savefig("./drop/cw-cma-fitted-sed.pdf")
         plt.show(block=True)
 
-
+    @unittest.skip("Comment this out to run this interactive test")
     def test_plot_model_spectra_vary_teffs(self):
         """ Interactive test for producing plot of the effect of varying Teff on SED """
 
@@ -97,22 +98,31 @@ class Testplots(unittest.TestCase):
         labels = [f"{v} K" for v in theta if v > 1000]
 
         stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        fig = plot_model_spectra(theta=theta,
-                                 model_grid=stellar_grid,
-                                 show_component_spectra=True,
-                                 show_combined_spectrum=False,
-                                 show_legend=True,
-                                 labels=labels,
-                                 show_grid=True,
-                                 figsize=(6, 4),
-                                 num_points=2000,
-                                 lam_from=0.3,
-                                 lam_to=30)
+        for suffix,     flux_unit,              loglog in [
+            ("",        u.W / u.m**2,           True),
+            ("",        u.Jy,                   True),
+            ("-linear", u.W / u.m**2,           False),
+            ("-linear", u.Jy,                   False),
+        ]:
+            fig = plot_model_spectra(theta=theta,
+                                     model_grid=stellar_grid,
+                                     show_component_spectra=True,
+                                     show_combined_spectrum=False,
+                                     show_legend=True,
+                                     labels=labels,
+                                     show_grid=(suffix == ""),
+                                     figsize=(6, 4),
+                                     num_points=2000,
+                                     lam_from=0.3,
+                                     lam_to=30,
+                                     log_log_axes=loglog,
+                                     plot_flux_unit=flux_unit)
 
-        fig.savefig("./drop/model-spectra-vary-teffs.pdf")
-        # plt.show(block=True)
+            flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
+            fig.savefig(f"./drop/model-spectra-{flux_unit_str}-vary-teffs{suffix}.pdf")
+            # plt.show(block=True)
 
-
+    @unittest.skip("Comment this out to run this interactive test")
     def test_plot_model_spectra_vary_radius(self):
         """ Interactive test for producing plot of the effect of varying radius on SED """
 
@@ -125,17 +135,26 @@ class Testplots(unittest.TestCase):
         labels = [f"${v}\\,{{\\rm R_{{\\odot}}}}$" for v in theta[12:18]]
 
         stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        fig = plot_model_spectra(theta=theta,
-                                 model_grid=stellar_grid,
-                                 show_component_spectra=True,
-                                 show_combined_spectrum=False,
-                                 show_legend=True,
-                                 labels=labels,
-                                 show_grid=True,
-                                 figsize=(6, 4),
-                                 num_points=2000,
-                                 lam_from=0.3,
-                                 lam_to=30)
+        for suffix,     flux_unit,              loglog in [
+            ("",        u.W / u.m**2,           True),
+            ("",        u.Jy,                   True),
+            ("-linear", u.W / u.m**2,           False),
+            ("-linear", u.Jy,                   False),
+        ]:
+            fig = plot_model_spectra(theta=theta,
+                                     model_grid=stellar_grid,
+                                     show_component_spectra=True,
+                                     show_combined_spectrum=False,
+                                     show_legend=True,
+                                     labels=labels,
+                                     show_grid=(suffix == ""),
+                                     figsize=(6, 4),
+                                     num_points=2000,
+                                     lam_from=0.3,
+                                     lam_to=30,
+                                     log_log_axes=loglog,
+                                     plot_flux_unit=flux_unit)
 
-        fig.savefig("./drop/model-spectra-vary-radius.pdf")
-        # plt.show(block=True)
+            flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
+            fig.savefig(f"./drop/model-spectra-{flux_unit_str}-vary-radius{suffix}.pdf")
+            # plt.show(block=True)
