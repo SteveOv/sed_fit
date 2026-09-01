@@ -99,12 +99,12 @@ class Testplots(unittest.TestCase):
 
         stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
         for suffix,             flux_unit,              x_scale,    y_scale in [
-            ("-log-log",        u.W / u.m**2,           "log",      "log"),
-            ("-log-log",        u.Jy,                   "log",      "log"),
-            ("-log-linear",     u.W / u.m**2,           "log",      "linear"),
-            ("-log-linear",     u.Jy,                   "log",      "linear"),
-            ("-linear",         u.W / u.m**2,           "linear",   "linear"),
-            ("-linear",         u.Jy,                   "linear",   "linear"),
+            ("log-log",         u.W / u.m**2,           "log",      "log"),
+            ("log-log",         u.Jy,                   "log",      "log"),
+            ("log-linear",      u.W / u.m**2,           "log",      "linear"),
+            ("log-linear",      u.Jy,                   "log",      "linear"),
+            ("linear",          u.W / u.m**2,           "linear",   "linear"),
+            ("linear",          u.Jy,                   "linear",   "linear"),
         ]:
             fig = plot_model_spectra(theta=theta,
                                      model_grid=stellar_grid,
@@ -113,7 +113,7 @@ class Testplots(unittest.TestCase):
                                      show_legend=True,
                                      labels=labels,
                                      show_grid=(suffix == ""),
-                                     figsize=(6, 4),
+                                     figsize=(6, 3),
                                      num_points=2000,
                                      lam_from=0.3,
                                      lam_to=30,
@@ -122,7 +122,47 @@ class Testplots(unittest.TestCase):
                                      plot_flux_unit=flux_unit)
 
             flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
-            fig.savefig(f"./drop/model-spectra-{flux_unit_str}-vary-teffs{suffix}.pdf")
+            fig.savefig(f"./drop/model-spectra-vary-teffs-{flux_unit_str}-{suffix}.pdf")
+            # plt.show(block=True)
+
+    @unittest.skip("Comment this out to run this interactive test")
+    def test_plot_model_spectra_vary_logg(self):
+        """ Interactive test for producing plot of the effect of varying logg on SED """
+
+        # Same effective temperature (fixed distance and no exinction) at different radii
+        theta = np.array([5000, 5000, 5000, 5000, 5000, 5000,
+                          5.5, 5.0, 4.5, 4.0, 3.5, 3.0,
+                          1, 1, 1, 1, 1, 1,
+                          50,
+                          0])
+        labels = [f"$\\log{{g}}={v}$" for v in theta[6:12]]
+
+        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
+        for suffix,             flux_unit,              x_scale,    y_scale in [
+            ("log-log",         u.W / u.m**2,           "log",      "log"),
+            ("log-log",         u.Jy,                   "log",      "log"),
+            ("log-linear",      u.W / u.m**2,           "log",      "linear"),
+            ("log-linear",      u.Jy,                   "log",      "linear"),
+            ("linear",          u.W / u.m**2,           "linear",   "linear"),
+            ("linear",          u.Jy,                   "linear",   "linear"),
+        ]:
+            fig = plot_model_spectra(theta=theta,
+                                     model_grid=stellar_grid,
+                                     show_component_spectra=True,
+                                     show_combined_spectrum=False,
+                                     show_legend=True,
+                                     labels=labels,
+                                     show_grid=(suffix == ""),
+                                     figsize=(6, 3),
+                                     num_points=2000,
+                                     lam_from=0.3,
+                                     lam_to=30,
+                                     x_scale=x_scale,
+                                     y_scale=y_scale,
+                                     plot_flux_unit=flux_unit)
+
+            flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
+            fig.savefig(f"./drop/model-spectra-vary-logg-{flux_unit_str}-{suffix}.pdf")
             # plt.show(block=True)
 
     @unittest.skip("Comment this out to run this interactive test")
@@ -139,12 +179,12 @@ class Testplots(unittest.TestCase):
 
         stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
         for suffix,             flux_unit,              x_scale,    y_scale in [
-            ("-log-log",        u.W / u.m**2,           "log",      "log"),
-            ("-log-log",        u.Jy,                   "log",      "log"),
-            ("-log-linear",     u.W / u.m**2,           "log",      "linear"),
-            ("-log-linear",     u.Jy,                   "log",      "linear"),
-            ("-linear",         u.W / u.m**2,           "linear",   "linear"),
-            ("-linear",         u.Jy,                   "linear",   "linear"),
+            ("log-log",        u.W / u.m**2,            "log",      "log"),
+            ("log-log",        u.Jy,                    "log",      "log"),
+            ("log-linear",     u.W / u.m**2,            "log",      "linear"),
+            ("log-linear",     u.Jy,                    "log",      "linear"),
+            ("linear",         u.W / u.m**2,            "linear",   "linear"),
+            ("linear",         u.Jy,                    "linear",   "linear"),
         ]:
             fig = plot_model_spectra(theta=theta,
                                      model_grid=stellar_grid,
@@ -153,7 +193,7 @@ class Testplots(unittest.TestCase):
                                      show_legend=True,
                                      labels=labels,
                                      show_grid=(suffix == ""),
-                                     figsize=(6, 4),
+                                     figsize=(6, 3),
                                      num_points=2000,
                                      lam_from=0.3,
                                      lam_to=30,
@@ -162,5 +202,5 @@ class Testplots(unittest.TestCase):
                                      plot_flux_unit=flux_unit)
 
             flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
-            fig.savefig(f"./drop/model-spectra-{flux_unit_str}-vary-radius{suffix}.pdf")
+            fig.savefig(f"./drop/model-spectra-vary-radius-{flux_unit_str}-{suffix}.pdf")
             # plt.show(block=True)
