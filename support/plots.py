@@ -254,7 +254,7 @@ def plot_hr_diagram(teffs: ArrayLike,
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4), constrained_layout=True)
     labels = labels or [None] * teffs.shape[0]
-    fmts = _cycle_for(["o", "o", "D", "D", "h", "h", "p", "p"], teffs.shape[0])
+    fmts = _cycle_for(["o", "o", "d", "d", "h", "h", "p", "p"], teffs.shape[0])
     fillstyles = _cycle_for(["full", "none"], teffs.shape[0])
     for ix, (teffn, teffe, lumn, lume, label, fmt, fs) in enumerate(zip(teff_noms, teff_errs,
                                                                     lum_noms, lum_errs,
@@ -357,9 +357,9 @@ def plot_predictions_vs_labels(fitted_values: ArrayLike,
 
     # The markers, marker sizes and alpha values are different depending on small/large dataset
     if big_markers or (big_markers is None and inst_count < 100):
-        fmt = ["o", "s", "D", "p"]
+        fmt = ["o", "s", "d", "p"]
         c = [plot_colors[0], plot_colors[4], plot_colors[4], plot_colors[4]]
-        ms = [7.0, 8.5, 8.5, 10.5]
+        ms = [7.0, 8.5, 9.5, 10.5]
         alpha = [(0.66 if np.any(hl_mask1 | hl_mask2 | hl_mask3) else 1.0), 1.0, 1.0, 1.0]
     else:
         fmt = ["o", "o", "o", "o"]
