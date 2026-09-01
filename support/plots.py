@@ -235,7 +235,8 @@ def plot_model_spectra(theta: ArrayLike,
                        num_points: int=5000,
                        lam_from: float=None,
                        lam_to: float=None,
-                       log_log_axes: bool=True,
+                       x_scale: str="log",
+                       y_scale: str="log",
                        plot_flux_unit: u.UnitBase=None,
                        **format_kwargs):
     """
@@ -255,8 +256,9 @@ def plot_model_spectra(theta: ArrayLike,
     :num_points: the number of individual fluxes to calculate, with higher giving more detail
     :lam_from: the minimum wavelength to plot
     :lam_to: the maximum wavelngth to plot
-    :log_log_axes: whether to set both axes on a log (True) or linear (False) scale
-    :plot_flux_unitplot_flux_unit: the flux unit to plot if not the grid's flux unit
+    :x_scale: the scale for the x-axis, log or linear
+    :y_scale: the scale for the x-axis, log or linear
+    :plot_flux_unit: the flux unit to plot if not the grid's flux unit
     :format_kwargs: kwargs to be passed on to format_axes()
     :returns: the final Figure
     """
@@ -298,8 +300,7 @@ def plot_model_spectra(theta: ArrayLike,
             ax.plot(spec_lams, (comb_spec_flux * model_grid.flux_unit) * plot_flux_unit,
                     c="b", alpha=1, lw=.75, label="combined")
 
-    scale = "log" if log_log_axes else "linear"
-    ax.set(xscale=scale, xlabel=xlabel, yscale=scale, ylabel=ylabel)
+    ax.set(xscale=x_scale, xlabel=xlabel, yscale=y_scale, ylabel=ylabel)
 
     if show_grid:
         ax.grid(True, which="both", axis="both", alpha=0.33, color="lightgray")

@@ -98,11 +98,13 @@ class Testplots(unittest.TestCase):
         labels = [f"{v} K" for v in theta if v > 1000]
 
         stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        for suffix,     flux_unit,              loglog in [
-            ("",        u.W / u.m**2,           True),
-            ("",        u.Jy,                   True),
-            ("-linear", u.W / u.m**2,           False),
-            ("-linear", u.Jy,                   False),
+        for suffix,             flux_unit,              x_scale,    y_scale in [
+            ("-log-log",        u.W / u.m**2,           "log",      "log"),
+            ("-log-log",        u.Jy,                   "log",      "log"),
+            ("-log-linear",     u.W / u.m**2,           "log",      "linear"),
+            ("-log-linear",     u.Jy,                   "log",      "linear"),
+            ("-linear",         u.W / u.m**2,           "linear",   "linear"),
+            ("-linear",         u.Jy,                   "linear",   "linear"),
         ]:
             fig = plot_model_spectra(theta=theta,
                                      model_grid=stellar_grid,
@@ -115,7 +117,8 @@ class Testplots(unittest.TestCase):
                                      num_points=2000,
                                      lam_from=0.3,
                                      lam_to=30,
-                                     log_log_axes=loglog,
+                                     x_scale=x_scale,
+                                     y_scale=y_scale,
                                      plot_flux_unit=flux_unit)
 
             flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
@@ -135,11 +138,13 @@ class Testplots(unittest.TestCase):
         labels = [f"${v}\\,{{\\rm R_{{\\odot}}}}$" for v in theta[12:18]]
 
         stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        for suffix,     flux_unit,              loglog in [
-            ("",        u.W / u.m**2,           True),
-            ("",        u.Jy,                   True),
-            ("-linear", u.W / u.m**2,           False),
-            ("-linear", u.Jy,                   False),
+        for suffix,             flux_unit,              x_scale,    y_scale in [
+            ("-log-log",        u.W / u.m**2,           "log",      "log"),
+            ("-log-log",        u.Jy,                   "log",      "log"),
+            ("-log-linear",     u.W / u.m**2,           "log",      "linear"),
+            ("-log-linear",     u.Jy,                   "log",      "linear"),
+            ("-linear",         u.W / u.m**2,           "linear",   "linear"),
+            ("-linear",         u.Jy,                   "linear",   "linear"),
         ]:
             fig = plot_model_spectra(theta=theta,
                                      model_grid=stellar_grid,
@@ -152,7 +157,8 @@ class Testplots(unittest.TestCase):
                                      num_points=2000,
                                      lam_from=0.3,
                                      lam_to=30,
-                                     log_log_axes=loglog,
+                                     x_scale=x_scale,
+                                     y_scale=y_scale,
                                      plot_flux_unit=flux_unit)
 
             flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
