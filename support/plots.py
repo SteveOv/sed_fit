@@ -263,7 +263,12 @@ def plot_model_spectra(theta: ArrayLike,
     :returns: the final Figure
     """
     theta_noms = nominal_values(theta)
-    nstars = (theta.shape[0] - 2) // 3
+    if len(theta.shape) > 1:
+        nstars = theta.shape[0]
+        theta_iterator = (t for t in theta_noms)
+    else:
+        nstars = (theta.shape[0] - 2) // 3
+        theta_iterator = iterate_theta(theta_noms)
     if show_legend:
         if labels is None:
             subs = ["ABCDEFGHIJKLM"[n] for n in range(nstars)]
@@ -288,7 +293,7 @@ def plot_model_spectra(theta: ArrayLike,
 
     with u.set_enabled_equivalencies(u.spectral() + u.spectral_density(spec_lams)):
         comb_spec_flux = np.zeros((num_points), dtype=float)
-        for (teff, logg, rad, dist, av), lbl in zip(iterate_theta(theta_noms), labels):
+        for (teff, logg, rad, dist, av), lbl in zip(theta_iterator, labels):
             spec_flux = model_grid.get_fluxes(wavelengths=spec_lams, teff=teff,
                                               logg=logg, radius=rad, distance=dist, av=av)
             comb_spec_flux += spec_flux

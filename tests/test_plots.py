@@ -2,6 +2,7 @@
 # pylint: disable=line-too-long, protected-access, no-member, too-many-locals, too-many-arguments, unused-variable
 import unittest
 import json
+from pathlib import Path
 
 import numpy as np
 import astropy.units as u
@@ -85,122 +86,47 @@ class Testplots(unittest.TestCase):
         # fig.savefig("./drop/cw-cma-fitted-sed.pdf")
         plt.show(block=True)
 
-    @unittest.skip("Comment this out to run this interactive test")
-    def test_plot_model_spectra_vary_teffs(self):
-        """ Interactive test for producing plot of the effect of varying Teff on SED """
-
-        # Same size star (fixed distance and no exinction) at different effective temperatures
-        theta = np.array([20000, 10000, 7000, 5000, 4000, 3000,
-                          4, 4, 4, 4, 4, 4,
-                          1, 1, 1, 1, 1, 1,
-                          50,
-                          0])
-        labels = [f"{v} K" for v in theta if v > 1000]
-
-        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        for suffix,             flux_unit,              x_scale,    y_scale in [
-            ("log-log",         u.W / u.m**2,           "log",      "log"),
-            ("log-log",         u.Jy,                   "log",      "log"),
-            ("log-linear",      u.W / u.m**2,           "log",      "linear"),
-            ("log-linear",      u.Jy,                   "log",      "linear"),
-            ("linear",          u.W / u.m**2,           "linear",   "linear"),
-            ("linear",          u.Jy,                   "linear",   "linear"),
-        ]:
-            fig = plot_model_spectra(theta=theta,
-                                     model_grid=stellar_grid,
-                                     show_component_spectra=True,
-                                     show_combined_spectrum=False,
-                                     show_legend=True,
-                                     labels=labels,
-                                     show_grid=(suffix == ""),
-                                     figsize=(6, 3),
-                                     num_points=2000,
-                                     lam_from=0.3,
-                                     lam_to=30,
-                                     x_scale=x_scale,
-                                     y_scale=y_scale,
-                                     plot_flux_unit=flux_unit)
-
-            flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
-            fig.savefig(f"./drop/model-spectra-vary-teffs-{flux_unit_str}-{suffix}.pdf")
-            # plt.show(block=True)
 
     @unittest.skip("Comment this out to run this interactive test")
-    def test_plot_model_spectra_vary_logg(self):
-        """ Interactive test for producing plot of the effect of varying logg on SED """
+    def test_plot_model_spectra_vary_params(self):
+        """ Interactive test for producing plot of the effect of varying params on SED/spectra """
+        plot_dir = Path("./drop/vary-spectra/")
+        plot_dir.mkdir(parents=True, exist_ok=True)
+        stellar_grid = get_stellar_grid("BtSettlGrid", extinction_model=G23(Rv=3.1), use_quick_mode=False)
 
-        # Same effective temperature (fixed distance and no exinction) at different radii
-        theta = np.array([5000, 5000, 5000, 5000, 5000, 5000,
-                          5.5, 5.0, 4.5, 4.0, 3.5, 3.0,
-                          1, 1, 1, 1, 1, 1,
-                          50,
-                          0])
-        labels = [f"$\\log{{g}}={v}$" for v in theta[6:12]]
+        for ix, (vary, theta_list, label_format) in enumerate([
+            ("teff",    [[t, 4, 1, 50, 0] for t in [20000, 10000, 7000, 5000, 4000, 3000]], "{0} K"),
+            ("logg",    [[5000, l, 1, 50, 0] for l in [5.5, 5.0, 4.5, 4.0, 3.5, 3.0]],      "$\\log{{g}}={0}$"),
+            ("radius",  [[5000, 4, r, 50, 0] for r in [5, 4, 3, 2, 1, 0.5]],                "${0}\\,{{\\rm R_{{\\odot}}}}$"),
+            ("dist",    [[5000, 4, 1, d, 0] for d in [5, 10, 20, 30, 40, 50]],              "{0} pc"),
+            ("av",      [[5000, 4, 1, 50, a] for a in [0.0, 0.1, 0.25, 0.5, 1.0, 1.5]],     "$A_V = {0}$"),
+        ]):
+            theta = np.array(theta_list)
+            labels = [label_format.format(v) for v in theta[..., ix]]
 
-        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        for suffix,             flux_unit,              x_scale,    y_scale in [
-            ("log-log",         u.W / u.m**2,           "log",      "log"),
-            ("log-log",         u.Jy,                   "log",      "log"),
-            ("log-linear",      u.W / u.m**2,           "log",      "linear"),
-            ("log-linear",      u.Jy,                   "log",      "linear"),
-            ("linear",          u.W / u.m**2,           "linear",   "linear"),
-            ("linear",          u.Jy,                   "linear",   "linear"),
-        ]:
-            fig = plot_model_spectra(theta=theta,
-                                     model_grid=stellar_grid,
-                                     show_component_spectra=True,
-                                     show_combined_spectrum=False,
-                                     show_legend=True,
-                                     labels=labels,
-                                     show_grid=(suffix == ""),
-                                     figsize=(6, 3),
-                                     num_points=2000,
-                                     lam_from=0.3,
-                                     lam_to=30,
-                                     x_scale=x_scale,
-                                     y_scale=y_scale,
-                                     plot_flux_unit=flux_unit)
+            for suffix,             flux_unit,              x_scale,    y_scale in [
+                ("log-log",         u.W / u.m**2,           "log",      "log"),
+                ("log-log",         u.Jy,                   "log",      "log"),
+                ("log-linear",      u.W / u.m**2,           "log",      "linear"),
+                ("log-linear",      u.Jy,                   "log",      "linear"),
+                ("linear",          u.W / u.m**2,           "linear",   "linear"),
+                ("linear",          u.Jy,                   "linear",   "linear"),
+            ]:
+                fig = plot_model_spectra(theta=theta,
+                                         model_grid=stellar_grid,
+                                         show_component_spectra=True,
+                                         show_combined_spectrum=False,
+                                         show_legend=True,
+                                         labels=labels,
+                                         show_grid=(suffix == ""),
+                                         figsize=(6, 3),
+                                         num_points=2000,
+                                         lam_from=0.3,
+                                         lam_to=30,
+                                         x_scale=x_scale,
+                                         y_scale=y_scale,
+                                         plot_flux_unit=flux_unit)
 
-            flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
-            fig.savefig(f"./drop/model-spectra-vary-logg-{flux_unit_str}-{suffix}.pdf")
-            # plt.show(block=True)
-
-    @unittest.skip("Comment this out to run this interactive test")
-    def test_plot_model_spectra_vary_radius(self):
-        """ Interactive test for producing plot of the effect of varying radius on SED """
-
-        # Same effective temperature (fixed distance and no exinction) at different radii
-        theta = np.array([5000, 5000, 5000, 5000, 5000, 5000,
-                          4, 4, 4, 4, 4, 4,
-                          5, 4, 3, 2, 1, 0.5,
-                          50,
-                          0])
-        labels = [f"${v}\\,{{\\rm R_{{\\odot}}}}$" for v in theta[12:18]]
-
-        stellar_grid = get_stellar_grid("BtSettlGrid", use_quick_mode=False)
-        for suffix,             flux_unit,              x_scale,    y_scale in [
-            ("log-log",        u.W / u.m**2,            "log",      "log"),
-            ("log-log",        u.Jy,                    "log",      "log"),
-            ("log-linear",     u.W / u.m**2,            "log",      "linear"),
-            ("log-linear",     u.Jy,                    "log",      "linear"),
-            ("linear",         u.W / u.m**2,            "linear",   "linear"),
-            ("linear",         u.Jy,                    "linear",   "linear"),
-        ]:
-            fig = plot_model_spectra(theta=theta,
-                                     model_grid=stellar_grid,
-                                     show_component_spectra=True,
-                                     show_combined_spectrum=False,
-                                     show_legend=True,
-                                     labels=labels,
-                                     show_grid=(suffix == ""),
-                                     figsize=(6, 3),
-                                     num_points=2000,
-                                     lam_from=0.3,
-                                     lam_to=30,
-                                     x_scale=x_scale,
-                                     y_scale=y_scale,
-                                     plot_flux_unit=flux_unit)
-
-            flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
-            fig.savefig(f"./drop/model-spectra-vary-radius-{flux_unit_str}-{suffix}.pdf")
-            # plt.show(block=True)
+                flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
+                fig.savefig(plot_dir / f"model-spectra-vary-{vary}-{flux_unit_str}-{suffix}.pdf")
+                # plt.show(block=True)
