@@ -94,6 +94,8 @@ if __name__ == "__main__":
                     help="specific target from the targets file to be fitted (overrides exclude)")
     ap.add_argument("-mo", "--mcmc-off", dest="mcmc_off", action="store_true", required=False,
                     help="suppress running of MCMC for parameters")
+    ap.add_argument ("-qo", "--quick-off", dest="use_quick_mode", action="store_false",
+                     required=False, help="suppress the use of model grid's quick_mode")
     # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
     ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True,
                     use_av_override=False)
