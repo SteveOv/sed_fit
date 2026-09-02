@@ -395,11 +395,13 @@ if __name__ == "__main__":
                 fig.savefig(plots_dir / "sed-mcmc-sampled.pdf")
                 plt.close(fig)
 
+                # The value priors were populated with the known values, so can be used as truths
                 samples = samples_from_sampler(sampler, flat=True)
+                truths = np.array(value_priors)
                 fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
                                     quantiles=[0.16, 0.5, 0.84],
                                     labels=theta_plot_captions(nstars)[fit_mask],
-                                    truths=nom_vals(theta_mcmc[fit_mask]))
+                                    truths=nom_vals(truths[fit_mask]))
                 fig.savefig(plots_dir / "sed-mcmc-corner.pdf")
                 plt.close(fig)
 
