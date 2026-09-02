@@ -398,12 +398,16 @@ if __name__ == "__main__":
                 # The value priors were populated with the known values, so can be used as truths
                 samples = samples_from_sampler(sampler, flat=True)
                 truths = np.array(value_priors)
-                fig = corner.corner(samples, show_titles=True, plot_datapoints=True,
-                                    quantiles=[0.16, 0.5, 0.84],
-                                    labels=theta_plot_captions(nstars)[fit_mask],
-                                    truths=nom_vals(truths[fit_mask]))
-                fig.savefig(plots_dir / "sed-mcmc-corner.pdf")
-                plt.close(fig)
+                for suffix, mask in [("corner", fit_mask), ("corner-free", prior_flags > 1)]:
+                    plot_samples = samples[:, mask] # Should be a view so no copy
+                    fig = corner.corner(plot_samples, show_titles=True, plot_datapoints=True,
+                                        quantiles=[0.16, 0.5, 0.84],
+                                        labels=theta_plot_captions(nstars)[mask],
+                                        truths=nom_vals(truths[mask]))
+                    fig.savefig(plots_dir / f"sed-mcmc-{suffix}.pdf")
+                    plt.close(fig)
+                    print(f"\nSaved a '{suffix}' plot for",
+                          "*".join(f"{s:d}" for s in plot_samples.shape), "samples.")
 
                 # Save the results
                 with mcmc_csv.open("a", encoding="utf8") as f:
