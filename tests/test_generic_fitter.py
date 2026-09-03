@@ -96,6 +96,7 @@ class Test_generic_fitter(unittest.TestCase):
                                  theta0=theta0,
                                  fit_mask=None, # Default all to be True/fitted
                                  fit_args=(x, y, y_err),
+                                 processes=1,
                                  verbose=True)
 
         self.assertAlmostEqual(expected_m, theta_mcmc[0].n, 0)

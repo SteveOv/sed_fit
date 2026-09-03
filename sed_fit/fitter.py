@@ -24,8 +24,10 @@ R_sun = _iau2015.R_sun.to(_u.m).value
 
 
 # GLOBALS which will be set by (minimize|mcmc)_fit prior to fitting. Hateful things!
-# Unfortunately this is how we get fast MCMC, as the way emcee works makes
-# using a class or passing these between functions in args way too sloooow!
+# See the emcee documentation with the following link for a discussion of why this is needed.
+# https://emcee.readthedocs.io/en/stable/tutorials/parallel/#pickling-data-transfer-arguments
+# Basically, by setting these as globals they're pickled & passed to each process only on creation.
+# If a class+attributes or the EnsembleSampler's args are used they're pickled on every iteration.
 # The code expects _fixed_theta and _fit_mask to be the same size.
 _fixed_theta: _np.ndarray[float]
 _fit_mask: _np.ndarray[bool]
@@ -37,7 +39,7 @@ _stellar_grid: StellarGrid
 _ln_prior_func: _Callable[[_np.ndarray[float]], float]
 _ln_likelihood_func: _Callable[[_np.ndarray[float]], float]
 
-# Try to protect them as much as possible by wrapping writes within a critical section
+# Try to protect the globals as much as possible by wrapping their use within a critical section
 _fit_mutex = _Lock()
 
 def _ln_chisq_likelihood_func(y_model: _np.ndarray[float]) -> float:

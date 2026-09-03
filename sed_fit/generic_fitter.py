@@ -93,8 +93,8 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
              nsteps: int=100000,
              thin_by: int=10,
              seed: int=42,
-             processes: int=1,
-             autocor_tol: int=50,
+             processes: int=None,
+             autocorr_tol: int=50,
              early_stopping: bool=True,
              early_stopping_from: int=None,
              progress: _Union[bool, str]=False,
@@ -105,7 +105,10 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
     should be held fixed (False). If fit_mask is omitted it is assumed that all values are fitted.
 
     Will run up to niters iterations. Every 1000 iterations will check if the fit has
-    converged and will stop early if that is the case
+    converged and will stop early if that is the case.
+
+    Will run the walkers on a multiprocessing pool if processes is not set anything other than 1.
+    Set the processes argument to the number of worker processes, or None to let the pool to choose.
 
     :ln_prob_func: the probability function to optimize - expected to return negative values
     :ln_prior_func: the callback function to evaluate the current theta against prior criteria
@@ -150,56 +153,67 @@ def mcmc_fit(ln_prob_func: _Callable[[_np.ndarray[float], any], float],
     if early_stopping:
         if early_stopping_from is None or early_stopping_from <= 0:
             # Min steps required by Autocorr algo to avoid warn msg (not a warning so can't filter)
-            early_stopping_from = int(50 * ndim * autocor_tol)
+            early_stopping_from = int(50 * ndim * autocorr_tol)
         if early_stopping_from >= iterations * thin_by:
             early_stopping = False
             if verbose:
                 print(f"Early stopping disabled as the total steps <= {early_stopping_from:d}.")
 
-    if verbose:
-        print("Running MCMC fit on", f"{processes}" if processes else f"up to {_cpu_count()}",
-            f"process(es) with {nwalkers:d} walkers for {iterations * thin_by:d}",
-            f"steps, sampling every {thin_by:d} steps." if thin_by > 1 else "steps.")
-        if early_stopping:
-            print(f"Early stopping will be considered after {early_stopping_from:d} steps.")
-
-    with _Pool(processes) as pool, _catch_warnings(category=[RuntimeWarning, UserWarning]):
+    with _catch_warnings(category=[RuntimeWarning, UserWarning]):
         _filterwarnings("ignore", message="invalid value encountered in ")
         _filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
+        pool = None
+        try:
+            # pylint: disable=consider-using-with
+            pool = None if (processes is not None and processes < 2) else _Pool(processes=processes)
+            sampler = _EnsembleSampler(int(nwalkers), ndim, ln_prob_func, args=fit_args, pool=pool)
 
-        sampler = _EnsembleSampler(int(nwalkers), ndim, ln_prob_func, args=fit_args, pool=pool)
-        step = 0
-        for _ in sampler.sample(initial_state=p0, iterations=iterations,
-                                thin_by=thin_by, tune=True, progress=progress):
+            if verbose:
+                pcount = getattr(pool, "_processes", "indeterminate number of")
+                print("Running MCMC sampling on",
+                      "the host process" if pool is None else f"a pool of {pcount} process(es)",
+                      f"with {nwalkers:d} walkers for {iterations * thin_by:d}",
+                      f"steps, sampling every {thin_by:d} steps." if thin_by > 1 else "steps.")
+                if early_stopping:
+                    print(f"Early stopping will be considered after {early_stopping_from:d} steps.")
+
+            step = 0
+            for _ in sampler.sample(initial_state=p0, iterations=iterations,
+                                    thin_by=thin_by, tune=True, progress=progress):
+                step = sampler.iteration * thin_by
+                if early_stopping and step % 1000 == 0:
+                    try:
+                        # The autocor time (tau) is the #steps to effectively forget start position.
+                        # As the fit converges the change in tau will tend towards zero.
+                        prev_tau = tau
+                        tau = sampler.get_autocorr_time(c=5, tol=autocorr_tol) * thin_by
+                        if step >= early_stopping_from \
+                                and not any(_np.isnan(tau)) \
+                                and all(tau < step / 100) \
+                                and all(abs(prev_tau - tau) / prev_tau < 0.01):
+                            break
+                    except _AutocorrError:
+                        # Chain is too short. Can set the quiet arg to True in which case a warning
+                        # message is output, but not a Python warning. Cleaner to consume the error.
+                        pass
+
             step = sampler.iteration * thin_by
-            if early_stopping and step % 1000 == 0:
-                try:
-                    # The autocor time (tau) is the #steps to effectively forget start position.
-                    # As the fit converges the change in tau will tend towards zero.
-                    prev_tau, tau = tau, sampler.get_autocorr_time(c=5, tol=autocor_tol) * thin_by
-                    if step >= early_stopping_from \
-                            and not any(_np.isnan(tau)) \
-                            and all(tau < step / 100) \
-                            and all(abs(prev_tau - tau) / prev_tau < 0.01):
-                        break
-                except _AutocorrError:
-                    # The chain is too short. Can set the quiet arg to True in which case a warning
-                    # message is output (but not a Python warning). Cleaner to consume the error.
-                    pass
+            if verbose:
+                if early_stopping and step < nsteps:
+                    print(f"Halting MCMC sampling after {step:d} steps as the walkers are beyond",
+                            "100 times the autocorrelation time & the fit has converged.")
+                else:
+                    print(f"Completed MCMC sampling after {step:d} steps.")
 
-        step = sampler.iteration * thin_by
-        if verbose:
-            if early_stopping and step < nsteps:
-                print(f"Halting MCMC sampling after {step:d} steps as the walkers are beyond",
-                        "100 times the autocorrelation time & the fit has converged.")
-            else:
-                print(f"Completed MCMC sampling after {step:d} steps.")
+            # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values, where fitted
+            theta_mcmc = _uarray(theta0, 0)
+            samps = samples_from_sampler(sampler, autocorr_tol, thin_by, flat=True, verbose=verbose)
+            lo, med, hi = _np.quantile(samps, q=(0.16, 0.5, 0.84), axis=0)
+            theta_mcmc[fit_mask] = _uarray(med, _np.mean([med-lo, hi-med], axis=0))
 
-        # Get theta into ufloats with std_dev based on the mean +/- 1-sigma values (where fitted)
-        theta_mcmc = _uarray(theta0, 0)
-        samples = samples_from_sampler(sampler, autocor_tol, thin_by, flat=True, verbose=verbose)
-        lo, med, hi = _np.quantile(samples, q=(0.16, 0.5, 0.84), axis=0)
-        theta_mcmc[fit_mask] = _uarray(med, _np.mean([med-lo, hi-med], axis=0))
+        finally:
+            if pool:
+                pool.terminate()
 
     if verbose:
         print_theta(theta_mcmc, fit_mask, "The MCMC fit yielded theta:  ")

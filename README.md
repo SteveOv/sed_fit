@@ -52,3 +52,24 @@ Use the following command;
 $ conda activate sed_fit
 ```
 
+## A note for MacOS users
+Firstly you have my sympathy. Secondly you may encounter an incompatibility between `emcee`
+and python's `multiprocessing` process pool, which can result in the following error when
+running an MCMC (such as with fit_testing);
+```
+NameError: name '_fixed_theta' is not defined
+```
+The issue appears to be related to the start method used to create the pool processes.
+The documentation for python 
+[context and start methods](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods)
+states the from python 3.8 the "spawn" method is the default method on MacOS. If you
+experience the above failure you can try the alternative "fork" method, which resolved the
+issue for me, with the following code;
+```python
+from multiprocessing import set_start_method
+set_start_method("fork", force=True)
+```
+
+You should run this as early as possible, preferrably within a ```if __name__ == "__main__":```
+block. The alternative solution is to disable the pool used within `mcmc_fit` by setting its
+`processes` argument to 1 (although this comes with an obvious performance trade-off).
