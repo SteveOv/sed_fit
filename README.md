@@ -53,23 +53,25 @@ $ conda activate sed_fit
 ```
 
 ## A note for MacOS users
-Firstly you have my sympathy. Secondly you may encounter an incompatibility between `emcee`
-and python's `multiprocessing` pool, which can lead to the following error being raised when
-running an MCMC (such as with fit_testing);
+Firstly, you have my sympathy. Secondly, you may encounter an incompatibility 
+between `emcee` and python's `multiprocessing` pool which can lead to the
+following error being raised when an MCMC is run (such as with fit_testing);
 ```
 NameError: name '_fixed_theta' is not defined
 ```
-The issue appears to be related to the start method used to create the pool processes, which
-in this case is not setting the global state required for the MCMC. The documentation for python 
+The issue appears to be related to the start method used to create the pool
+processes, which in this case is not copying over the global state required
+for the MCMC. The documentation for python in
 [context and start methods](https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods)
-states the from python 3.8 that "spawn" is the default start method on MacOS. If you
-experience the above failure you can try the alternative "fork" method with the following
-code (which resolved the issue for me);
+states that from python 3.8 on "spawn" is the default start method on MacOS.
+If you experience the above failure you can switch to the alternative "fork"
+method with the following code (which resolved the issue for me);
 ```python
 from multiprocessing import set_start_method
 set_start_method("fork", force=True)
 ```
 
-You should run this as early as possible, ideally shorly after creating the ```if __name__ == "__main__":```
-block. The alternative solution, which comes at the expense of throughput, is to disable the
-use of a pool within `mcmc_fit` by setting its `processes` argument to 1.
+You should run this as early as possible, ideally soon after entering a
+```if __name__ == "__main__":``` block. The alternative solution, which comes
+at the expense of throughput, is to avoid the use of a pool within `mcmc_fit`
+by setting its `processes` argument to 1.
