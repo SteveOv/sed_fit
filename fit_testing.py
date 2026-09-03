@@ -87,7 +87,7 @@ def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="The sed_fit esting module for known targets.")
+    ap = argparse.ArgumentParser(description="The sed_fit testing module for known targets.")
     ap.add_argument(dest="targets_file", type=Path, metavar="TARGETS_FILE",
                     help="json file containing the details of the targets to fit")
     ap.add_argument("-t", "--targets", dest="targets", type=str, required=False, nargs="+",
@@ -96,9 +96,12 @@ if __name__ == "__main__":
                     help="suppress running of MCMC for parameters")
     ap.add_argument ("-qo", "--quick-off", dest="use_quick_mode", action="store_false",
                      required=False, help="suppress the use of model grid's quick_mode")
+    ap.add_argument("-mp", "--mcmc-processes", dest="mcmc_processes", type=int, required=False,
+                    help="The number of processes on which to spread MCMC sampling,"
+                            + " which defaults to the number of available cores if not set")
     # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
     ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True,
-                    use_av_override=False)
+                    mcmc_processes=None, use_av_override=False)
     args = ap.parse_args()
     run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
 
@@ -382,8 +385,8 @@ if __name__ == "__main__":
                 print(flush=True)
                 nwalkers, thin_by = 100, 1
                 theta_mcmc, sampler = mcmc_fit(x, y, y_err, theta0, fit_mask, stellar_grid,
-                                               ln_prior_func=ln_prior_func,
-                                               nwalkers=nwalkers, nsteps=100000, processes=8,
+                                               ln_prior_func=ln_prior_func, nwalkers=nwalkers,
+                                               nsteps=100000, processes=args.mcmc_processes,
                                                thin_by=thin_by, early_stopping=True,
                                                progress=True, verbose=True)
 
