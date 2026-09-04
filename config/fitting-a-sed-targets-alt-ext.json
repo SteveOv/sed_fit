@@ -28,6 +28,8 @@
         "logLB": 2.778,         "logLB_err": 0.059,
         "LR": 0.804,            "LR_err": 0.029,
         "k": 0.888,             "k_err": 0.016,
-        "ebv": 0.50,            "ebv_err": 0.08
+
+        "ebv": 0.50,            "ebv_err": 0.08,
+        "ebv_bibcode": "2025Obs...145...26S"
     }
 }
