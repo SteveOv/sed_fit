@@ -1,4 +1,37 @@
 {
+    "V436 Per": {
+        "search_term": "V* V436 Per",
+        "aka": "TIC 403625251, HD 11241",
+        "Teff_sys": 24000,
+        "gaia_dr3_id": 408620409702994432,
+        "ruwe": 1.1360,
+        "ra": 27.9972659087144,
+        "dec": 55.1473469804437,
+        "parallax": 2.6944122829392523,
+        "parallax_err": 0.08876741677522659,
+        "parallax_bibcode": "2022yCat.1355....0G",
+        "sed_filter_exclusions": ["WISE:W4"],
+        "sed_tabname_exclusions": [],
+        "source": "Southworth & Bowman (2022MNRAS.513.3191S) Table 3. Teffs reproduced from Janik+ (2003A&A...408..611J).",
+        "citation_key": "SouthworthBowman22mnras",
+        "revisions": "Override the default Gontcharov extinction (0.355+/-0.124) with a lower value from Edenhofer2023 to address the very high Teffs in the default test. All other params unchanged.",
+        "SpT": "B1.5 V",
+        "MA": 6.880,            "MA_err": 0.037,
+        "MB": 7.348,            "MB_err": 0.039,
+        "RA": 3.415,            "RA_err": 0.046,
+        "RB": 3.745,            "RB_err": 0.027,
+        "TeffA": 21500,         "TeffA_err": 1000,
+        "TeffB": 22000,         "TeffB_err": 1000,
+        "loggA": 4.209,         "loggA_err": 0.012,
+        "loggB": 4.157,         "loggB_err": 0.006,
+        "logLA": 3.351,         "logLA_err": 0.081,
+        "logLB": 3.471,         "logLB_err": 0.079,
+        "LR": 1.253,            "LR_err": 0.032,
+        "k": 1.097,             "k_err": 0.022,
+
+        "av": 0.155,            "av_err": 0.050,
+        "extinction_bibcode": "2024A&A...685A..82E"
+    },
     "MU Cas": {
         "search_term": "V* MU Cas",
         "aka": "TIC 83905462, HIP 1263",
@@ -30,6 +63,6 @@
         "k": 0.888,             "k_err": 0.016,
 
         "ebv": 0.50,            "ebv_err": 0.08,
-        "ebv_bibcode": "2025Obs...145...26S"
+        "extinction_bibcode": "2025Obs...145...26S"
     }
 }
