@@ -205,7 +205,7 @@ if __name__ == "__main__":
                                 / ufloat(nomA, config.get(f"{c}A_err", None) or nomA * 0.05)
                         config[f"{c}R"], config[f"{c}R_err"] = nom_val(ratio), std_dev(ratio)
 
-                if not all(c in config for c in ["ruwe", "ra", "dec", "parallax"]):
+                if not all(c in config for c in ["ruwe", "ra", "dec", "parallax", "dist"]):
                     print(f"Querying Gaia DR3 for coordinates and ruwe of {target}")
                     dr3_id = int(config["gaia_dr3_id"])
                     if _tbl := Gaia.launch_job("SELECT TOP 1 * FROM gaiadr3.gaia_source_lite " \
@@ -217,15 +217,16 @@ if __name__ == "__main__":
                         config["parallax_err"] = _tbl["parallax_error"][0]
                         config["parallax_bibcode"] = "2022yCat.1355....0G"
 
-                # Get the distance and store it as a label
                 if "dist" in config:
                     dist = ufloat(config["dist"], config.get("dist_err", None) or 0)
-                    print(f"Using distance from config of: {dist:.3f} pc")
+                    print(f"Using distance from config of: {dist:.3f} pc"
+                          + f" (bibcode={config.get('dist_bibcode', '')})")
                 else:
                     dist = 1000 / ufloat(config["parallax"], config.get("parallax_err", None) or 0)
-                    print(f"Using distance from parallax of: {dist:.3f} pc")
                     config["dist"], config["dist_err"] = dist.n, dist.s
                     config["dist_bibcode"] = config.get("parallax_bibcode", "")
+                    print(f"Using distance from parallax of: {dist:.3f} pc (bibcode="
+                          + f"{config.get('dist_bibcode', '')}, ruwe={config.get('ruwe', 0):.3f})")
 
 
                 # Read the SED for target, de-duplicate then apply any range and exclusion filters.
