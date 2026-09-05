@@ -15,7 +15,7 @@ from uncertainties import ufloat
 from astroquery.simbad import Simbad
 from deblib.vmath import wrap_func_for_uncertainties
 
-from fit_testing_plots import read_result_csv
+from fit_testing_results import read_result_csv
 from support.tee import Tee
 from support.pipeline import deredden, dist_by_brightness_and_teff
 
@@ -53,7 +53,7 @@ if __name__ == "__main__":
         mcmc_vals = read_result_csv(args.drop_dir / "mcmc-results.csv")
 
         # Slimey hack as the mcmc_vals structured array isn't iterating well when only 1
-        targets = [str(mcmc_vals["target"][0])] if len(mcmc_vals) == 1 else mcmc_vals["target"]
+        targets = [str(mcmc_vals["target"])] if mcmc_vals.size == 1 else mcmc_vals["target"]
         sterm_index = { targets_cfg[t].get("search_term", t): t for t in targets }
         supported_bands = ["U", "B", "V", "R", "I", "J", "H", "K", "L"]
 

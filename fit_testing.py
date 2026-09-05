@@ -41,6 +41,7 @@ from sed_fit.fitter import minimize_fit, mcmc_fit
 from sed_fit.generic_fitter import samples_from_sampler
 from sed_fit.stellar_grids import StellarGrid
 
+DELIM = ";"
 
 # Use a non-interactive matplotlib backend to avoid threading errors.
 mpl_use("agg")
@@ -153,13 +154,13 @@ if __name__ == "__main__":
 
         # Set up the CSV files that will hold the results
         run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
-        for csv, cols, hfmt in [(lbl_csv, result_colnames(nstars, label_cols=True), r"{0},{0}_err"),
+        for csv, cols, hfmt in [(lbl_csv, result_colnames(nstars, label_cols=True), r"{0}"),
                                 (fit_csv, result_colnames(nstars), r"{0}"),
-                                (mcmc_csv,  result_colnames(nstars), r"{0},{0}_err")]:
+                                (mcmc_csv,  result_colnames(nstars), r"{0}")]:
             if not "mcmc" in csv.name or not args.mcmc_off:
                 with open(csv, mode="a", encoding="utf8") as f:
                     # OK to append headers as they're comments and should be ignored if in the body
-                    f.write("# target," + ",".join(hfmt.format(c) for c in cols) + "\n")
+                    f.write("# target" + DELIM + DELIM.join(hfmt.format(c) for c in cols) + "\n")
                     f.write("# " + run_details + "\n")
 
         # Extinction model: G23 (Gordon et al., 2023) Milky Way R(V) filter gives broadest coverage
@@ -237,7 +238,7 @@ if __name__ == "__main__":
                 # Read the SED for target, de-duplicate then apply any range and exclusion filters.
                 print(flush=True)
                 sed = get_sed_for_target(target, config["search_term"], radius=0.25,
-                                        remove_duplicates=True, verbose=True)
+                                         remove_duplicates=True, verbose=True)
 
                 smask = np.ones((len(sed)), dtype=bool)
                 smask &= stellar_grid.has_filter(sed["sed_filter"])
@@ -332,7 +333,7 @@ if __name__ == "__main__":
 
                 # Save the labels to a csv.
                 with lbl_csv.open("a", encoding="utf8") as f:
-                    f.write(f"{target}," + ",".join(f"{config[c]:.6e},{config.get(f'{c}_err', None) or 0:.6e}" for c in result_colnames(nstars, True)) +"\n") # pylint: disable=line-too-long
+                    f.write(target + DELIM + DELIM.join(f"{ufloat(config[c], config.get(f'{c}_err', None) or 0):.9e}" for c in result_colnames(nstars, True)) + "\n") # pylint: disable=line-too-long
 
 
 
@@ -375,7 +376,7 @@ if __name__ == "__main__":
 
                 # Save the results
                 with fit_csv.open("a", encoding="utf8") as f:
-                    f.write(f"{target}," + ",".join(f"{t:.6e}" for t in theta_fit) + "\n")
+                    f.write(target + DELIM + DELIM.join(f"{t:.9e}" for t in theta_fit) + "\n")
 
 
                 if args.mcmc_off:
@@ -419,7 +420,7 @@ if __name__ == "__main__":
 
                 # Save the results
                 with mcmc_csv.open("a", encoding="utf8") as f:
-                    f.write(f"{target}," +",".join(f"{t.n:.6e},{t.s:.6e}" for t in theta_mcmc)+"\n")
+                    f.write(target + DELIM + DELIM.join(f"{t:.9e}" for t in theta_mcmc) + "\n")
 
 
             except Exception as exc: # pylint: disable=broad-exception-caught
