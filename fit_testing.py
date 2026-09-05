@@ -210,7 +210,7 @@ if __name__ == "__main__":
                                 / ufloat(nomA, config.get(f"{c}A_err", None) or nomA * 0.05)
                         config[f"{c}R"], config[f"{c}R_err"] = nom_val(ratio), std_dev(ratio)
 
-                if not all(c in config for c in ["ruwe", "ra", "dec", "parallax", "dist"]):
+                if not all(c in config for c in ["ruwe", "ra", "dec", "parallax"]):
                     print(f"Querying Gaia DR3 for coordinates and ruwe of {target}")
                     dr3_id = int(config["gaia_dr3_id"])
                     if _tbl := Gaia.launch_job("SELECT TOP 1 * FROM gaiadr3.gaia_source_lite " \
