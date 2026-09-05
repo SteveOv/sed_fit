@@ -269,20 +269,17 @@ if __name__ == "__main__":
                 value_priors = [ufloat(config[f"{n}{sub}"], config.get(f"{n}{sub}_err", None) or 0)
                                             for n in ["Teff", "logg", "R"] for sub in subs(nstars)]
                 value_priors += [dist]
-                if "av_override" in config and args.use_av_override:
-                    value_priors += [ufloat(config["av_override"], 0.05)]
+                if "av" in config:
+                    value_priors += [ufloat(config["av"], config["av_err"])]
+                elif "ebv" in config:
+                    value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
                 else:
-                    if "av" in config:
-                        value_priors += [ufloat(config["av"], config["av_err"])]
-                    elif "ebv" in config:
-                        value_priors += [ufloat(config["ebv"], config["ebv_err"]) * ext_model.Rv]
-                    else:
-                        coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
-                                         distance=1000 / config["parallax"] * u.pc, frame="icrs")
-                        value_priors += [Av:=ufloat(get_gontcharov_av(coords)[0],0.04*ext_model.Rv)]
-                        print(f"\nAv from the Gontcharov extinction map & target coords: {Av:.3f}")
-                    config.setdefault("av", value_priors[-1].n)
-                    config.setdefault("av_err", value_priors[-1].s)
+                    coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg,
+                                      distance=1000 / config["parallax"] * u.pc, frame="icrs")
+                    value_priors += [av := ufloat(get_gontcharov_av(coords)[0], 0.04*ext_model.Rv)]
+                    print(f"\nAv from the Gontcharov extinction map & target coords: {av:.3f}")
+                config.setdefault("av", value_priors[-1].n)
+                config.setdefault("av_err", value_priors[-1].s)
 
                 for ix, vp in enumerate(value_priors): # Set any missing uncertainties to 5%
                     if not std_dev(vp):
