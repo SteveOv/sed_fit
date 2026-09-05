@@ -103,7 +103,11 @@ if __name__ == "__main__":
     ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True,
                     mcmc_processes=None, use_av_override=False)
     args = ap.parse_args()
-    run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
+
+    # Work-around for potential issue on MacOS. Try enabling this if you get failures with a
+    # message similar to 'NameError: name '_fixed_theta' is not defined' when running the MCMC.
+    # from multiprocessing import set_start_method
+    # set_start_method("fork", force=True)
 
     # Get the targets' configurations
     with open(args.targets_file, mode="r", encoding="utf8") as f:
@@ -148,6 +152,7 @@ if __name__ == "__main__":
                                  slice(3*nstars,3*nstars+1), slice(3*nstars+1,3*nstars+2)])
 
         # Set up the CSV files that will hold the results
+        run_details = f"{datetime.now():%Y-%m-%d %H:%M:%S%z %Z} $ {' '.join(orig_argv)}"
         for csv, cols, hfmt in [(lbl_csv, result_colnames(nstars, label_cols=True), r"{0},{0}_err"),
                                 (fit_csv, result_colnames(nstars), r"{0}"),
                                 (mcmc_csv,  result_colnames(nstars), r"{0},{0}_err")]:
