@@ -52,7 +52,9 @@ if __name__ == "__main__":
         # Read the results of MCMC sampling
         mcmc_vals = read_result_csv(args.drop_dir / "mcmc-results.csv")
 
-        sterm_index = { targets_cfg[t].get("search_term", t): t for t in mcmc_vals["target"] }
+        # Slimey hack as the mcmc_vals structured array isn't iterating well when only 1
+        targets = [str(mcmc_vals["target"][0])] if len(mcmc_vals) == 1 else mcmc_vals["target"]
+        sterm_index = { targets_cfg[t].get("search_term", t): t for t in targets }
         supported_bands = ["U", "B", "V", "R", "I", "J", "H", "K", "L"]
 
         # Will give us a row for every combination of search term and flux/magnitude observation
