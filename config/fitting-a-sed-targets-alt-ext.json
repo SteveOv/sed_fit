@@ -177,7 +177,7 @@
         "sed_tabname_exclusions": ["J/ApJS/235/6/catalog"],
         "source": "Overall & Southworth (2024Obs...144...71O) Rediscussion 17, Tables III & VI.",
         "citation_key": "OverallSouthworth24obsR17",
-        "revision": "To address high Teffs & low radii, overriding the published E(B-V) of 0.013(15) mag with an AV from the spread of the Gontcharov & Edenhofer2023 maps. All other params unchanged.",
+        "revision": "To address high Teffs & low radii, overriding the published E(B-V) of 0.013(15) mag with an AV=0.019(0.1) from the Edenhofer2023 map. All other params unchanged.",
         "SpT": "F2 V",
         "MA": 1.568,            "MA_err": 0.016,
         "MB": 1.314,            "MB_err": 0.010,
@@ -192,8 +192,8 @@
         "LR": 0.4532,           "LR_err": 0.0015,
         "k": 0.7037,            "k_err": 0.0011,
 
-        "av": 0.144,            "av_err": 0.124,
-        "ext_bibcode": "n/a"
+        "av": 0.019,            "av_err": 0.10,
+        "ext_bibcode": "2024A&A...685A..82E"
     },
     "AN Cam": {
         "search_term": "V* AN Cam",
