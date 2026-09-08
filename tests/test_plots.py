@@ -9,10 +9,11 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 import matplotlib.pyplot as plt
 from dust_extinction.parameter_averages import G23
+from uncertainties.unumpy import uarray, nominal_values as nom_vals, std_devs
 
 from sed_fit.stellar_grids import get_stellar_grid
 from support.sed import get_sed_for_target, retain_only_closest_observations
-from support.plots import plot_sed, plot_fitted_model, plot_model_spectra
+from support.plots import plot_sed, plot_fitted_model, plot_model_spectra, plot_hr_diagram
 from support.utils import to_file_safe_str
 
 class Testplots(unittest.TestCase):
@@ -130,3 +131,33 @@ class Testplots(unittest.TestCase):
                 flux_unit_str = to_file_safe_str(str(flux_unit).replace(" ", ""))
                 fig.savefig(plot_dir / f"model-spectra-vary-{vary}-{flux_unit_str}-{suffix}.pdf")
                 # plt.show(block=True)
+
+
+    # @unittest.skip("Comment this out to run this interactive test")
+    def test_plot_hr_diagram(self):
+        """ Interactive test for producing plot of the effect of varying params on SED/spectra """
+        # # 1-d: single stars or Single system with multiple components
+        # Teffs = uarray([21500, 22000, 7850], [1000, 1000, 350])
+        # lums = 10**uarray([3.351, 3.471, 1.19], [0.081, 0.079, 0.08])
+        # labels = ["V436 Per A", "V436 Per B", "OO Peg A"]
+
+        # 2-d (#system, #star) multiple systems with multiple components each. Here binaries
+        Teffs = uarray(         # V436 Per          OO Peg          CW Eri          ZZ Boo          ZZ UMa
+            nominal_values= [[21500, 22000],    [7850, 7600],   [6839, 6561],   [6720, 6690],   [5960, 5270]],
+            std_devs=       [[1000, 1000],      [350, 450],     [87, 98],       [100, 100],     [70, 90]]).T
+        lums = 10**uarray(      # V436 Per          OO Peg          CW Eri          ZZ Boo          ZZ UMa
+            nominal_values= [[3.351, 3.471],    [1.19, 1.04],   [0.941, 0.564], [0.893, 0.943], [0.370, -0.095]],
+            std_devs=       [[0.081, 0.079],    [0.08, 0.10],   [0.022, 0.026], [0.026, 0.026], [0.021, 0.030]]).T
+        labels = ["Star A", "Star B"]
+
+        # # Or as triple systems here
+        # Teffs = uarray(         # V436 Per + 1           CW Eri + 1
+        #     nominal_values= [[21500, 22000, 7850],      [6839, 6561, 5270]],
+        #     std_devs=       [[1000, 1000, 350],         [87, 98, 90]]).T
+        # lums = 10**uarray(      # V436 Per + 1          CW Eri + 1
+        #     nominal_values= [[3.351, 3.471, 1.19],      [0.941, 0.564, -0.095]],
+        #     std_devs=       [[0.081, 0.079, 0.08],      [0.022, 0.026, 0.030]]).T
+        # labels = ["Star A", "Star B", "Star C"]
+        
+        fig = plot_hr_diagram(Teffs, lums, labels, plot_zams=True, plot_links=True, invertx=True, legend_loc="best")
+        plt.show(block=True)

@@ -130,8 +130,8 @@ if __name__ == "__main__":
                     rads = np.array([vals[f"R{sub}"] for sub in subs(nstars)])
                     lums = ((4 * np.pi * (rads * R_sun)**2 * sigma_sb * teffs**4) / L_sun).value
                 fig = plot_hr_diagram(teffs, lums, [f"star {sub}" for sub in subs(nstars)],
-                                      plot_zams=True, legend_loc="best", invertx=True,
-                                      xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
+                                      plot_zams=True, plot_links=True, legend_loc="best",
+                                      invertx=True, xlim=(28e3, 2.6e3), ylim=(1e-3, 2.2e4))
                 fig.savefig(figs_dir / f"h-r-{name}.pdf")
                 plt.close(fig)
 

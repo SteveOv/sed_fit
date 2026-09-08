@@ -317,6 +317,7 @@ def plot_hr_diagram(teffs: ArrayLike,
                     luminosities: ArrayLike,
                     labels: ArrayLike=None,
                     plot_zams: bool=False,
+                    plot_links: bool=False,
                     **format_kwargs) -> _Figure:
     """
     Plots a log(L) vs log(T_eff) Hertzsprung-Russell diagram with an optional ZAMS line.
@@ -326,6 +327,7 @@ def plot_hr_diagram(teffs: ArrayLike,
     :luminosities: radius values to plot on the y-axis in shape (#sets, #lums) or (#lums) for 1 set
     :labels: optional labels text for each set (if multiple sets) or item (if a single set)
     :plot_zams: whether or not to include a zero age main-sequence line on the figure
+    :plot_links: whether or not to include lines linking the stars of each index
     :format_kwargs: kwargs to be passed on to format_axes()
     :returns: the Figure
     """
@@ -351,6 +353,14 @@ def plot_hr_diagram(teffs: ArrayLike,
         ax.errorbar(x=teffn, xerr=teffe, y=lumn, yerr=lume,
                     fmt=fmt, ms=ms, lw=1.0, markeredgewidth=1.0,
                     fillstyle=fs, zorder=ix, label=label)
+
+    if plot_links:
+        # Draw lines linking each component of each set of Teff/lums to the "primary" component
+        tlz = zip(teff_noms.T, lum_noms.T) if len(teffs.shape) > 1 else zip([teff_noms], [lum_noms])
+        for tnoms, lnoms in tlz:
+            for comp_tnom, comp_lnom in zip(tnoms[1:], lnoms[1:]):
+                ax.plot([tnoms[0], comp_tnom], [lnoms[0], comp_lnom],
+                        marker=",", c="lightgray", ls="-", lw=1.0, zorder=-50)
 
     xlim = (min(3000, max(np.min(teff_noms - teff_errs) * 0.8, 1e-3)),
             max(20000, np.max(teff_noms + teff_errs) * 1.2))
