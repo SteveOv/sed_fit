@@ -106,7 +106,7 @@ if __name__ == "__main__":
         mcmc_vals = read_result_csv(drop_dir / "mcmc-results.csv")
         lbl_vals = read_result_csv(drop_dir / "labels.csv")
 
-        nstars = (len(fit_vals.dtype) - 3) // 3 # ignoring the target, dist & av columns
+        nstars = (len(lbl_vals.dtype) - 3) // 3 # ignoring the target, dist & av columns
         print(f"\nFound the results for {nstars} star(s) in min-results.csv")
 
         if mcmc_vals is not None and mcmc_vals.size > 0:
