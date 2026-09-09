@@ -360,7 +360,7 @@ def plot_hr_diagram(teffs: ArrayLike,
         for tnoms, lnoms in tlz:
             for comp_tnom, comp_lnom in zip(tnoms[1:], lnoms[1:]):
                 ax.plot([tnoms[0], comp_tnom], [lnoms[0], comp_lnom],
-                        marker=",", c="lightgray", ls="-", lw=1.0, zorder=-50)
+                        marker=",", c="tab:blue", alpha=0.5, ls="-", lw=1.0, zorder=-50)
 
     xlim = (min(3000, max(np.min(teff_noms - teff_errs) * 0.8, 1e-3)),
             max(20000, np.max(teff_noms + teff_errs) * 1.2))
