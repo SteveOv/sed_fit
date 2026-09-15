@@ -81,10 +81,11 @@ def to_results_tex(lab_vals: np.ndarray, res_vals: np.ndarray, to: TextIOBase=st
                 to.write((row_head if bl_row_num == 1 else "") + " & ")
                 row = " & ".join(fmt.format(v) for v, fmt in zip(row[out_cols], fmts))
                 to.write((str.replace(row, "\\pm", replace_pm_with) if replace_pm_with else row))
-                to.write(" \\\\ ")
-                if bl_row_num == row_span:
-                    to.write("[4pt]")
-                elif bl_row_num == 2 and errs_cline and include_errs:
+                if bl_row_num < row_span:
+                    to.write(" \\\\* ") # * stops page break following line (keeps blocks together)
+                else:
+                    to.write(" \\\\ [4pt] ")
+                if bl_row_num == 2 and errs_cline and include_errs:
                     to.write(f"\\cline{{2-{1 + len(out_cols)*2}}}")
                 to.write("\n")
         to.flush()
