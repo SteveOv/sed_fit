@@ -247,6 +247,7 @@
         "sed_filter_exclusions": [],
         "sed_tabname_exclusions": ["J/ApJS/235/6/catalog", "B/denis/denis"],
         "source": "Graczyk et al. (2022A&A...666A.128G) Tables 8 & 9.",
+        "notes": "Graczyk et al. mention L3 could potentially be the result of a close tertiary component of SpT K0V.",
         "citation_key": "GraczykPietrzynski+22aa",
         "SpT": "A2mA5-F2",
         "MA": 1.9621,           "MA_err": 0.0070,
