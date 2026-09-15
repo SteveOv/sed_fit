@@ -73,13 +73,17 @@ def to_results_tex(lab_vals: np.ndarray, res_vals: np.ndarray, to: TextIOBase=st
     to.write(r"\hline" + "\n")
     if endhead:
         to.write(r"\endhead" + "\n")
-    for lrow, rrow, erow in zip_longest(lab_vals, res_vals, err_vals):
+    for lrow, rrow, erow in zip_longest(
+        lab_vals if lab_vals.size > 1 else [lab_vals], # Hack because behaviour different if 1 row!
+        res_vals if res_vals.size > 1 else [res_vals],
+        err_vals if err_vals.size > 1 else [err_vals]
+    ):
         row_head = f"\\multirow{{{row_span}}}{{*}}{{{rrow['target']}}}"
         for bl_row_num, (row, fmts) in enumerate(zip([lrow, rrow, erow],
                                                     [out_fmts, out_fmts, err_fmts]), 1):
             if row is not None:
                 to.write((row_head if bl_row_num == 1 else "") + " & ")
-                row = " & ".join(fmt.format(v) for v, fmt in zip(row[out_cols], fmts))
+                row = " & ".join(fmt.format(v) for v, fmt in zip([row[c] for c in out_cols], fmts))
                 to.write((str.replace(row, "\\pm", replace_pm_with) if replace_pm_with else row))
                 if bl_row_num < row_span:
                     to.write(" \\\\* ") # * stops page break following line (keeps blocks together)
