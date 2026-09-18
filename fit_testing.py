@@ -82,9 +82,11 @@ def print_fitted_params(theta: np.ndarray, fitted_mask: np.ndarray,
                 kval = ufloat(kval, kerr)
         print(f"{param:>12s}{'*' if fitted else ' '} =", format_value(val, unit, kval))
     if "source" in known_values_dict:
-        print("Source(s) of known values:", known_values_dict["source"])
+        print("Source(s) of known values: ", known_values_dict["source"])
     if "dist_bibcode" in known_values_dict:
-        print("Source of distance:", known_values_dict["dist_bibcode"])
+        print("Source of known distance:  ", known_values_dict["dist_bibcode"])
+    if "ext_bibcode" in known_values_dict:
+        print("Source of known extinction:", known_values_dict["ext_bibcode"])
 
 
 if __name__ == "__main__":
@@ -110,9 +112,10 @@ if __name__ == "__main__":
     # from multiprocessing import set_start_method
     # set_start_method("fork", force=True)
 
-    # Get the targets' configurations
+    # Get the test and targets' configurations
     with open(args.targets_file, mode="r", encoding="utf8") as f:
         full_dict = json.load(f)
+        test_config = full_dict.pop("test_config", {})
         if args.targets is not None and len(args.targets) > 0:
             targets_cfg = { k: full_dict[k] for k in args.targets if k in full_dict }
         else:
@@ -142,12 +145,16 @@ if __name__ == "__main__":
         print(f"Command: {' '.join(orig_argv)}")
         print(f"Directory for data, logs & plots: {out_dir}\n", flush=True)
 
-        # Summarise how the priors are handled for each theta item. Each flag controls whether the
-        # corresponding value is fixed at known val & no prior (0), constrained by a Gaussian prior
-        # for a known "truth" value, or fully free and constrained by Gaussian prior on a ratio (2).
-        #                for:  Teffs        loggs        radii        dist  Av
+        # Indicate how fit & priors are handled for each theta item. Each flag controls whether the
+        # corresponding value is fixed & no prior (0), fitted & constrained by Gaussian prior for a
+        # "truth" value (1), or fitted & for T, l or R constrained by Gaussian prior on a ratio (2).
         nstars = 2 # TODO: can only support 2 stars until ratio handling updated
         prior_flags = np.array([2]*nstars + [1]*nstars + [2]*nstars + [1] + [1], dtype=int)
+        flag_lbls = np.array(["T"]*nstars + ["l"]*nstars + ["R"]*nstars + ["d", "a"])
+        if "prior_flags" in test_config:
+            prior_flags = np.array(test_config.get("prior_flags", []))
+        print(f"The fitting/prior flags: {prior_flags}", f"for [{' '.join(l for l in flag_lbls)}]")
+        assert prior_flags.size == flag_lbls.size
         # These slices are useful shortcut to subset of fit|prior flags and theta.
         theta_slices = np.array([slice(0,nstars), slice(nstars,2*nstars), slice(2*nstars,3*nstars),
                                  slice(3*nstars,3*nstars+1), slice(3*nstars+1,3*nstars+2)])
@@ -166,7 +173,7 @@ if __name__ == "__main__":
         # Extinction model: G23 (Gordon et al., 2023) Milky Way R(V) filter gives broadest coverage
         ext_model = G23(Rv=3.1)
         ext_wl_range = np.reciprocal(ext_model.x_range) * u.um # x_range has implicit units of 1/um
-        print(f"Using the {ext_model.__class__.__name__} extinction model covers the range from",
+        print(f"\nUsing the {ext_model.__class__.__name__} extinction model covers the range from",
             f"{min(ext_wl_range):unicode} to {max(ext_wl_range):unicode}.")
 
         # BtSettlGrid & KuruczGrid available. The former has better coverage but is slower/larger.
@@ -408,15 +415,16 @@ if __name__ == "__main__":
                 samples = samples_from_sampler(sampler, flat=True)
                 truths = np.array(value_priors)
                 for suffix, mask in [("corner", fit_mask), ("corner-free", prior_flags > 1)]:
-                    plot_samples = samples[:, mask] # Should be a view so no copy
-                    fig = corner.corner(plot_samples, show_titles=True, plot_datapoints=True,
-                                        quantiles=[0.16, 0.5, 0.84],
-                                        labels=theta_plot_captions(nstars)[mask],
-                                        truths=nom_vals(truths[mask]))
-                    fig.savefig(plots_dir / f"sed-mcmc-{suffix}.pdf")
-                    plt.close(fig)
-                    print(f"\nSaved a '{suffix}' plot for",
-                          "*".join(f"{s:d}" for s in plot_samples.shape), "samples.")
+                    if sum(mask) > 1:
+                        plot_samples = samples[:, mask] # Should be a view so no copy
+                        fig = corner.corner(plot_samples, show_titles=True, plot_datapoints=True,
+                                            quantiles=[0.16, 0.5, 0.84],
+                                            labels=theta_plot_captions(nstars)[mask],
+                                            truths=nom_vals(truths[mask]))
+                        fig.savefig(plots_dir / f"sed-mcmc-{suffix}.pdf")
+                        plt.close(fig)
+                        print(f"\nSaved a '{suffix}' plot for",
+                            "*".join(f"{s:d}" for s in plot_samples.shape), "samples.")
 
                 # Save the results
                 with mcmc_csv.open("a", encoding="utf8") as f:
