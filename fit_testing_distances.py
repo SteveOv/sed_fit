@@ -6,6 +6,8 @@ from pathlib import Path
 import argparse
 import json
 from contextlib import redirect_stdout
+from datetime import datetime
+from sys import orig_argv
 
 import numpy as np
 
@@ -24,6 +26,14 @@ from support.pipeline import deredden, dist_by_brightness_and_teff
 # Wrapped to support uncertainties (by perturbing arguments)
 wrapped_deredden = wrap_func_for_uncertainties(deredden)
 wrapped_kerv = wrap_func_for_uncertainties(dist_by_brightness_and_teff)
+
+flux_overrides = {
+    "CW Eri": {
+        "J": ufloat(7.65807650, 0.02205383),
+        "H": ufloat(7.51807650, 0.03524729),
+        "K": ufloat(7.48507650, 0.02480669)
+    }
+}
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Compare distances from fit_testing with those derived"
@@ -50,77 +60,91 @@ if __name__ == "__main__":
 
     log_file = args.drop_dir / f"{Path(ap.prog).stem}.log"
     with redirect_stdout(Tee(open(log_file, "a", encoding="utf8"))) as log:
+        print("\n============================================================")
+        print(f"Started {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
+        print("============================================================")
+        print(f"Command: {' '.join(orig_argv)}")
 
         # Read the results of MCMC sampling
         mcmc_vals = read_result_csv(args.drop_dir / "mcmc-results.csv")
+        label_vals = read_result_csv(args.drop_dir / "labels.csv")
 
         # Slimey hack as the mcmc_vals structured array isn't iterating well when only 1
-        targets = [str(mcmc_vals["target"])] if mcmc_vals.size == 1 else mcmc_vals["target"]
-        sterm_index = { targets_cfg[t].get("search_term", t): t for t in targets }
+        rtargs = [str(mcmc_vals["target"])] if mcmc_vals.size == 1 else mcmc_vals["target"]
+        sterm_index = {targets_cfg[t].get("search_term", t): t for t in rtargs if t in targets_cfg}
         supported_bands = ["U", "B", "V", "R", "I", "J", "H", "K", "L"]
 
         # Will give us a row for every combination of search term and flux/magnitude observation
-        print("\nQuerying SIMBAD for the fluxes of the requested MCMC results.")
+        print("\nQuerying SIMBAD for the fluxes of the requested results.")
         simbad = Simbad()
         simbad.add_votable_fields("flux")
         tbl = simbad.query_objects(list(sterm_index.keys()))
+
         for sterm in sterm_index.keys():
-            config = targets_cfg[sterm_index[sterm]]
+            target = sterm_index[sterm]
+            config = targets_cfg[target]
 
-            res_row = mcmc_vals[mcmc_vals["target"] == sterm_index[sterm]][0]
-            ebv = res_row["av"] / 3.1
-            TeffA, TeffB, RA, RB = res_row[["TeffA", "TeffB", "RA", "RB"]]
-            print(f"\n{sterm_index[sterm]} MCMC yields TeffA={TeffA:.3uf} & TeffB={TeffB:.3uf} K,",
-                  f"RA={RA:.3uf} & RB={RB:.3uf} {Rsun:unicode} and E(B-V)={ebv:.3uf} mag (RV=3.1).")
+            for vals, caption in [(label_vals, "labels"), (mcmc_vals, "MCMC")]:
+                res_row = vals[vals["target"] == target][0]
+                ebv = res_row["av"] / 3.1
+                TeffA, TeffB, RA, RB = res_row[["TeffA", "TeffB", "RA", "RB"]]
+                print(f"\n{target} {caption} gives TeffA={TeffA:.3uf} & TeffB={TeffB:.3uf} K,",
+                    f"RA={RA:.3uf} & RB={RB:.3uf} {Rsun:unicode}, & E(B-V)={ebv:.3uf} mag (RV=3.1)")
 
-            print("The distances calculated with the Kervella+ (2004A&A...426..297K)",
-                  "surface brightness-Teff relation are:")
-            flux_mask = np.array([sterm in r["user_specified_id"] for r in tbl])
-            flux_mask &= np.isin(tbl["flux.filter"], supported_bands)
-            flux_mask &= tbl["flux.qual"] == "C"
-            # flux_mask &= np.isfinite(tbl["flux_err"])
+                print("The distances calculated with the Kervella+ (2004A&A...426..297K)",
+                    "surface brightness-Teff relation are:")
+                flux_mask = np.array([sterm in r["user_specified_id"] for r in tbl])
+                flux_mask &= np.isin(tbl["flux.filter"], supported_bands)
+                flux_mask &= tbl["flux.qual"] == "C"
+                # flux_mask &= np.isfinite(tbl["flux_err"])
 
-            dists_for_mean = {}
-            for flux_row in tbl[flux_mask]:
-                band = flux_row["flux.filter"]
-                mag = ufloat(flux_row["flux"], flux_row["flux_err"] or 0)
-                dmag = wrapped_deredden(ebv=ebv, mag=mag, band=band)
-                dist = wrapped_kerv(Teff1=TeffA, Teff2=TeffB, R1=RA, R2=RB, band=band, mag=dmag)
-                print(f"dist[mag({band})={mag:.3f}] = {dist:.6f} pc", end="   ")
-                print("\t( err contribs:",
-                    ", ".join(f"{v.tag}={e/dist.s:.3f}" for v,e in dist.error_components().items()),
-                    ")")
-                if band in ("J", "H", "K"):
-                    dists_for_mean[band] = dist
+                dists_for_mean = {}
+                for flux_row in tbl[flux_mask]:
+                    band = flux_row["flux.filter"]
+                    mag = flux_overrides.get(target, {}) \
+                            .get(band, ufloat(flux_row["flux"], flux_row["flux_err"] or 0))
+                    dmag = wrapped_deredden(ebv=ebv, mag=mag, band=band)
+                    dist = wrapped_kerv(Teff1=TeffA, Teff2=TeffB, R1=RA, R2=RB, band=band, mag=dmag)
+                    dist_err_comps = dist.error_components()
+                    print(f"dist[mag({band})={mag:.3f}] = {dist:.6f} pc", end="   ")
+                    print("\t( err contribs:",
+                        ", ".join(f"{v.tag}={e / dist.s:.3f}" for v, e in dist_err_comps.items()),
+                        ")")
+                    if band in ("J", "H", "K"):
+                        dists_for_mean[band] = dist
 
-            if len(dists_for_mean) > 0:
-                # Arithmetic mean
-                mean_bands, dists = tuple(dists_for_mean.keys()), tuple(dists_for_mean.values())
-                print(f"Arithmetic mean distance {mean_bands}:        {np.mean(dists):.6f} pc")
+                if len(dists_for_mean) > 0:
+                    # Arithmetic mean
+                    mbands, dists = tuple(dists_for_mean.keys()), tuple(dists_for_mean.values())
+                    print(f"{f'Arithmetic mean distance {mbands}':>50s}: {np.mean(dists):.6f} pc")
 
-                # Unbiased weighted sample mean
-                # The (reliability) weights: w_i = 1 / sig_i^2 and W = SUM(w_i) and V = SUM(w_i^2)
-                # The **weighted sample mean**: xbar_w = 1/W * SUM(w_i * x_i)
-                # The biased weighted sample variance: sig2_w = 1/W * SUM(w_i * (x_i - xbar_w)^2)
-                # The **unbiased weighted sample variance**: s2_w = sig2_w / (1 - (V / W^2))
-                x_i, sig_i = nom_vals(dists), std_devs(dists)
-                sig_i[sig_i == 0] = 1e-21
-                w_i = np.reciprocal(np.square(sig_i))
-                big_w, big_v = np.sum(w_i), np.sum(np.square(w_i))
+                    # Unbiased weighted sample mean
+                    # The (reliability) weights: w_i = 1/sig_i^2 and W = SUM(w_i) and V = SUM(w_i^2)
+                    # The **weighted sample mean**: xbar_w = 1/W * SUM(w_i * x_i)
+                    # The biased weighted sample variance: sig2_w = 1/W * SUM(w_i * (x_i-xbar_w)^2)
+                    # The **unbiased weighted sample variance**: s2_w = sig2_w / (1 - (V / W^2))
+                    x_i, sig_i = nom_vals(dists), std_devs(dists)
+                    sig_i[sig_i == 0] = 1e-21
+                    w_i = np.reciprocal(np.square(sig_i))
+                    big_w, big_v = np.sum(w_i), np.sum(np.square(w_i))
 
-                xbar_w = np.divide(np.sum(np.multiply(w_i, x_i)), big_w)
-                sig2_w = np.divide(np.sum(np.multiply(w_i, np.power(x_i - xbar_w, 2))), big_w)
-                s2_w = np.divide(sig2_w, np.subtract(1, np.divide(big_v, np.square(big_w))))
-                unbiased_samp_mean = ufloat(xbar_w, np.sqrt(s2_w))
-                print(f"Unbiased weighted mean distance {mean_bands}: {unbiased_samp_mean:.6f} pc")
+                    xbar_w = np.divide(np.sum(np.multiply(w_i, x_i)), big_w)
+                    sig2_w = np.divide(np.sum(np.multiply(w_i, np.power(x_i - xbar_w, 2))), big_w)
+                    s2_w = np.divide(sig2_w, np.subtract(1, np.divide(big_v, np.square(big_w))))
+                    wtd_mean = ufloat(xbar_w, np.sqrt(s2_w))
+                    print(f"{f'Unbiased weighted mean distance {mbands}':>50s}: {wtd_mean:.6f} pc")
 
-            kndist, knbib = None, None
-            if "dist" in config:
-                kndist = ufloat(config["dist"], config.get("dist_err", 0)) # pc
-                knbib = config.get("dist_bibcode", "")
-            elif "parallax" in config:
-                kndist = 1000 / ufloat(config["parallax"], config.get("parallax_err", 0)) # mas
-                knbib = config.get("parallax_bibcode", "")
-            if kndist:
-                print(f"                                 Known distance: {kndist:.6f} pc ({knbib})")
-            print(f"{sterm_index[sterm]:>28s} distance from MCMC: {res_row['dist']:.6f} pc")
+                kndist, knbib = None, None
+                if "dist" in config:
+                    kndist = ufloat(config["dist"], config.get("dist_err", 0)) # pc
+                    knbib = config.get("dist_bibcode", "")
+                elif "parallax" in config:
+                    kndist = 1000 / ufloat(config["parallax"], config.get("parallax_err", 0)) # mas
+                    knbib = config.get("parallax_bibcode", "")
+                if kndist:
+                    print(f"{'Known distance':>50s}: {kndist:.6f} pc ({knbib})")
+                print(f"{f'{target} distance from {caption}':>50s}: {res_row['dist']:.6f} pc")
+
+        print("\n============================================================")
+        print(f"Completed {ap.prog} at {datetime.now():%Y-%m-%d %H:%M:%S%z %Z}")
+        print("============================================================")
