@@ -143,10 +143,10 @@ if __name__ == "__main__":
             # Plots of result vs label values.
             if vals is not None and name != "labels" and lbl_vals is not None:
                 print(f"Creating a result-vs-labels plot of the target's {msg}")
-                hl_mask1 = np.isin(vals["target"], ["V539 Ara", "V889 Aql"])    # square
-                hl_mask2 = np.isin(vals["target"], ["MU Cas", "V596 Pup"])      # diamond
+                hl_mask1 = np.isin(vals["target"], ["V436 Per", "not used"])    # square
+                hl_mask2 = np.isin(vals["target"], ["V596 Pup", "not used"])    # diamond
                 hl_mask3 = np.isin(vals["target"], ["not used"])                # pentagon
-                fill_mask = np.isin(vals["target"], ["V539 Ara", "MU Cas"])
+                fill_mask = np.isin(vals["target"], ["not used", "not used"])
                 plot_columns = ["TeffA", "TeffB", "RA", "RB"]
 
                 plot_columns = [f"{c}{sub}" for c in ["Teff", "R"] for sub in subs(nstars)]
