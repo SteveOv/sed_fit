@@ -56,7 +56,7 @@ def calculate_errors(lab_vals: np.ndarray, res_vals: np.ndarray,
     return err_vals
 
 def to_results_tex(lab_vals: np.ndarray, res_vals: np.ndarray, to: TextIOBase=stdout,
-                   include_errs: bool=False, relative_errs: bool=True, errs_cline: bool=True,
+                   include_errs: bool=False, relative_errs: bool=True, errs_cline: bool=False,
                    endhead: bool=True, replace_pm_with: str="&", num_stars: int=2):
     """ Write latex tabular/logtable rows to the passed TextIOBase """
     row_span, err_vals = 2, [None]
@@ -89,8 +89,8 @@ def to_results_tex(lab_vals: np.ndarray, res_vals: np.ndarray, to: TextIOBase=st
                     to.write(" \\\\* ") # * stops page break following line (keeps blocks together)
                 else:
                     to.write(" \\\\ [4pt] ")
-                if bl_row_num == 2 and errs_cline and include_errs:
-                    to.write(f"\\cline{{2-{1 + len(out_cols)*2}}}")
+                if bl_row_num == 2 and include_errs:
+                    to.write(("" if errs_cline else "% ") + f"\\cline{{2-{1 + len(out_cols)*2}}}")
                 to.write("\n")
         to.flush()
     to.write(r"\hline" + "\n")
