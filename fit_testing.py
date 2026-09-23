@@ -32,7 +32,7 @@ from dust_extinction.parameter_averages import G23
 from deblib.stellar import log_g
 
 from support.extinction import get_gontcharov_av
-from support.sed import get_sed_for_target
+from support.sed import get_sed_for_target, retain_only_closest_observations
 from support.plots import plot_sed, plot_fitted_model
 from support.tee import Tee
 from support.utils import to_file_safe_str, format_value, estimate_teff_from_spt
@@ -95,6 +95,8 @@ if __name__ == "__main__":
                     help="json file containing the details of the targets to fit")
     ap.add_argument("-t", "--targets", dest="targets", type=str, required=False, nargs="+",
                     help="specific target from the targets file to be fitted (overrides exclude)")
+    ap.add_argument("-co", "--closest-only", dest="closest_only",action="store_true",required=False,
+                    help="retain only the closest observation to the target for each SED filter")
     ap.add_argument("-mo", "--mcmc-off", dest="mcmc_off", action="store_true", required=False,
                     help="suppress running of MCMC for parameters")
     ap.add_argument ("-qo", "--quick-off", dest="use_quick_mode", action="store_false",
@@ -103,8 +105,8 @@ if __name__ == "__main__":
                     help="The number of processes on which to spread MCMC sampling,"
                             + " which defaults to the number of available cores if not set")
     # use_quick_mode affects the StellarGrid flux calculations with cached filter fluxex (True)
-    ap.set_defaults(targets=[], mcmc_off=False, overwrite=False, use_quick_mode=True,
-                    mcmc_processes=None, use_av_override=False)
+    ap.set_defaults(targets=[], closest_only=False, mcmc_off=False, overwrite=False,
+                    use_quick_mode=True, mcmc_processes=None, use_av_override=False)
     args = ap.parse_args()
 
     # Work-around for potential issue on MacOS. Try enabling this if you get failures with a
@@ -254,10 +256,16 @@ if __name__ == "__main__":
                 smask &= (sed["sed_wl"] >= min(stellar_grid.wavelength_range)) \
                             & (sed["sed_wl"] <= max(stellar_grid.wavelength_range))
                 sed = sed[smask]
+                print(f"{len(sed)} unique observations remain after range & exclusion filtering.")
+
+                if args.closest_only:
+                    target_coords = SkyCoord(ra=config["ra"] * u.deg, dec=config["dec"] * u.deg)
+                    sed = retain_only_closest_observations(sed, target_coords)
+                    print("Retained only the observation closest to the target for each filter",
+                          f"leaving {len(sed)} observations.")
 
                 sed.sort(["sed_wl"])
-                print(f"{len(sed)} unique SED observation(s) remain after range & exclusion",
-                    "filtering. \nThe units for flux density, frequency and wavelength are:",
+                print("The units for flux density, frequency and wavelength are:",
                     ", ".join(f"{sed[f].unit:unicode}" for f in ["sed_flux", "sed_freq", "sed_wl"]))
 
                 fig = plot_sed(sed["sed_wl"].quantity, sed["sed_flux"].quantity,
