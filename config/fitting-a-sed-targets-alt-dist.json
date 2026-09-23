@@ -149,7 +149,7 @@
         "sed_tabname_exclusions": [],
         "source": "Southworth et al. (2005MNRAS.363..529S) Tables 10 (adopted or V-band for J & LR) & 12.",
         "citation_key": "SouthworthSmalley+05mnras",
-        "revisions": "Using a lower distance of 84.3(7.6) pc from Hipparcos (1997ESASP1200.....E), overriding the value of 89.742(556) pc from the Gaia DR3 parallax.",
+        "revisions": "Using a lower distance of 84.3(7.5) pc from Hipparcos (1997ESASP1200.....E), overriding the value of 89.742(556) pc from the Gaia DR3 parallax.",
         "SpT": "A4 m + A5 m",
         "MA": 1.964,            "MA_err": 0.007,
         "MB": 1.814,            "MB_err": 0.007,
@@ -164,7 +164,7 @@
         "k": 0.953,             "k_err": 0.011,
         "LR": 0.788,            "LR_err": 0.019,
 
-        "dist": 84.3,           "dist_err": 7.6,
+        "dist": 84.3,           "dist_err": 7.5,
         "dist_bibcode": "1997ESASP1200.....E"
     },
     "RR Lyn": {
