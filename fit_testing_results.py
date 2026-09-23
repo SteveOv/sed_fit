@@ -154,7 +154,8 @@ if __name__ == "__main__":
                                                                 theta_plot_captions(nstars))
                                                                             if c in plot_columns])
                 fig = plot_predictions_vs_labels(vals[plot_columns], lbl_vals[plot_columns],
-                                                 captions=plot_captions, cols=nstars,
+                                                 captions=plot_captions, xlabel_prefix="known",
+                                                 ylabel_prefix="sampled", cols=nstars,
                                                  hl_mask1=hl_mask1, hl_mask2=hl_mask2,
                                                  hl_mask3=hl_mask3, fill_mask=fill_mask)
                 fig.savefig(figs_dir / f"results-vs-labels-{name}.pdf")
