@@ -298,12 +298,13 @@ def plot_model_spectra(theta: ArrayLike,
                                               logg=logg, radius=rad, distance=dist, av=av)
             comb_spec_flux += spec_flux
             if show_component_spectra:
-                ax.plot(spec_lams, (spec_flux * model_grid.flux_unit).to(plot_flux_unit),
+                plot_flux = (spec_flux << model_grid.flux_unit).to(plot_flux_unit)
+                ax.plot(spec_lams, plot_flux,
                         alpha=(0.75 if show_combined_spectrum else 1.0), lw=0.75, label=lbl)
 
         if show_combined_spectrum:
-            ax.plot(spec_lams, (comb_spec_flux * model_grid.flux_unit) * plot_flux_unit,
-                    c="b", alpha=1, lw=.75, label="combined")
+            plot_flux = (comb_spec_flux << model_grid.flux_unit).to(plot_flux_unit)
+            ax.plot(spec_lams, plot_flux, c="b", alpha=1, lw=.75, label="combined")
 
     ax.set(xscale=x_scale, xlabel=xlabel, yscale=y_scale, ylabel=ylabel)
 

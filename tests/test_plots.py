@@ -93,7 +93,9 @@ class Testplots(unittest.TestCase):
         """ Interactive test for producing plot of the effect of varying params on SED/spectra """
         plot_dir = Path("./drop/vary-spectra/")
         plot_dir.mkdir(parents=True, exist_ok=True)
-        stellar_grid = get_stellar_grid("BtSettlGrid", extinction_model=G23(Rv=3.1), use_quick_mode=False)
+        # data_file = Path("./sed_fit/data/stellar_grids/bt-settl/bt-settl-agss.npz")
+        grid = get_stellar_grid("BtSettlGrid", extinction_model=G23(Rv=3.1), use_quick_mode=False)
+        print(f"\nUsing a {grid.__class__.__name__} which gives fluxes in {grid.flux_unit:unicode}")
 
         for ix, (vary, theta_list, label_format) in enumerate([
             ("teff",    [[t, 4, 1, 50, 0] for t in [20000, 10000, 7000, 5000, 4000, 3000]], "{0} K"),
@@ -114,7 +116,7 @@ class Testplots(unittest.TestCase):
                 ("linear",          u.Jy,                   "linear",   "linear"),
             ]:
                 fig = plot_model_spectra(theta=theta,
-                                         model_grid=stellar_grid,
+                                         model_grid=grid,
                                          show_component_spectra=True,
                                          show_combined_spectrum=False,
                                          show_legend=True,
