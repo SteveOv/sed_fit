@@ -244,10 +244,10 @@ class TestBtSettlGrid(unittest.TestCase):
                 self.assertAlmostEqual(exp_flux, flux, 2)
 
     def test_get_fluxes_no_extinction_model_av_given(self):
-            """ Tests get_fluxes(teff, logg, metal, av) raises ValueError when given av but no extinction model set """
-            model_sed = BtSettlGrid(self._test_file, extinction_model=None)
-            with self.assertRaises(ValueError):
-                model_sed.get_fluxes([5.0], 5000, 4.0, 0.0, av=0.1)
+        """ Tests get_fluxes(teff, logg, metal, av) raises ValueError when given av but no extinction model set """
+        model_sed = BtSettlGrid(self._test_file, extinction_model=None)
+        with self.assertRaises(ValueError):
+            model_sed.get_fluxes([5.0], 5000, 4.0, 0.0, av=0.1)
 
     def test_get_fluxes_test_with_extinction_model(self):
         """ Tests get_fluxes(teff, logg, metal, radius, dist, av) happy path tests for redenning """
