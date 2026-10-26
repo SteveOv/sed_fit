@@ -108,6 +108,7 @@
         "source": "Southworth (2023Obs...143..165S) Rediscussion 14, Tables II & III",
         "citation_key": "Southworth23obsR14",
         "notes": "Southworth gives an ebv of 0.05+/-0.02 from STILISM and refs T08 with 0.023+/-0.007; The Gaia RUWE is high, suggesting questionable astrometric parallax. Eclipse timing delays can be explained by the presence of a faint third body on a wider orbit. Without excluding the GALEX:FUV & GALEX:NUV SED observations the fitted Teffs as ~600 K below published values;",
+        "notes2": "See Yucel et al. (2026ApJ...997....8Y) for a more recent characterisation with PHOEBE, TESS LCs & new RVs. They give MA=1.4569(+94,-100) & MB=1.3579(+94,-89) MSun and RA=1.543(+12,-9) & RB=1.377(+13,-15) RSun and amongst other measurements, including limits for third component.",
         "SpT": "F3 V + F5 V",
         "MA": 1.449,            "MA_err": 0.006,
         "MB": 1.350,            "MB_err": 0.006,
