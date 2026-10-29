@@ -577,6 +577,7 @@
         "source": "Southworth (2021Obs...141..234S) Rediscussion 6, Tables II & V.",
         "citation_key": "Southworth21obsR6",
         "notes": "Southworth finds a distance of 61.19(62) pc from K-band mags and Kervella surface brightness-Teff relations.",
+        "notes2": "Safari Forushani et al. (2026AJ....172....5S) give effective temperatures of 6550(50) K for both components via spectral analysis.",
         "SpT": "F5 V + F5 V",
         "MA": 1.275,            "MA_err": 0.004,
         "MB": 1.258,            "MB_err": 0.003,
