@@ -18,8 +18,9 @@ from uncertainties import UFloat as _UFloat
 from sed_fit.stellar_grids import StellarGrid
 from sed_fit import generic_fitter as _generic_fitter
 
-# The number of fittable params per star; Teff, logg & radius
+# The numbers of fittable params per star (Teff, logg & radius) and of common params (Av & dist)
 NUM_STAR_PARAMS: int = 3
+NUM_COMMON_PARAMS: int = 2
 
 # pylint: disable=too-many-arguments, too-many-positional-arguments, too-many-locals, no-member
 pc = (1 * _u.pc).to(_u.m).value
@@ -232,7 +233,7 @@ def create_theta(teffs: _Union[_List[float], float],
     :nstars: the number of stars we're building for
     :returns: the resulting theta list
     """
-    theta = _np.empty((nstars * NUM_STAR_PARAMS + 2), dtype=float)
+    theta = _np.empty(((nstars * NUM_STAR_PARAMS) + NUM_COMMON_PARAMS), dtype=float)
     ix = 0
     for name, val in [("teffs", teffs),("loggs", loggs),("radii", radii),("dist", dist),("av", av)]:
         exp_count = 1 if name in ("dist", "av") else nstars
@@ -262,7 +263,7 @@ def iterate_theta(theta: _np.ndarray[float]):
     :theta: the theta value to parse and iterate over
     :returns: a generator of the tuple (teff, logg, radius, distance, av)
     """
-    nstars = (theta.shape[0] - 2) // NUM_STAR_PARAMS
+    nstars = (theta.shape[0] - NUM_COMMON_PARAMS) // NUM_STAR_PARAMS
     dist = theta[-2]
     av = theta[-1]
     for star in range(nstars):
