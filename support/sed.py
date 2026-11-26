@@ -11,6 +11,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, unique
 from astropy.io.votable import parse_single_table
+from astroquery.vizier import conf
 import numpy as np
 
 
@@ -23,7 +24,7 @@ def get_sed_for_target(target: str,
                        freq_unit=u.Hz,
                        wl_unit=u.micron,
                        retries: int=2,
-                       host: str="https://vizier.cds.unistra.fr",
+                       server: str=conf.server,
                        verbose: bool=False) -> Table:
     """
     Gets spectral energy distribution (SED) observations for the target. These data are found and
@@ -50,7 +51,7 @@ def get_sed_for_target(target: str,
     :freq_unit: the unit of the returned sed_freq field
     :wl_unit: the unit of the returned sed_wl field
     :retries: the number of retries if we get time outs when calling the VizieR SED service
-    :host: service host
+    :server: service host server mirror
     :verbose: whether to output diagnostics messages
     :returns: an astropy Table containing the chosen data, sorted by descending frequency
     """
@@ -61,13 +62,15 @@ def get_sed_for_target(target: str,
     # Read in the SED for this target via the cache (filename includes both search criteria)
     sed_fname = sed_cache_dir / (re.sub(r"[^\w\d-]", "-", target.lower()) + f"-{radius}.vot")
     if not sed_fname.exists():
-        if verbose: print(f"Table {sed_fname.name} not cached so will query the VizieR SED service")
+        if verbose:
+            print(f"Table {sed_fname.name} not cached. Querying the VizieR SED service at {server}")
         max_attempts = 1 + max(0, retries)
         for attempt in range(1, max_attempts+1):
             try:
                 c = quote_plus(search_term or target)
-                sed = Table.read(f"{host}/viz-bin/sed?-c={c}&-c.rs={radius}&-out.add=_r")
+                sed = Table.read(f"https://{server}/viz-bin/sed?-c={c}&-c.rs={radius}&-out.add=_r")
                 sed.write(sed_fname, format="votable", overwrite=True)
+                break
             except TimeoutError as e:
                 if attempt >= max_attempts:
                     raise e
